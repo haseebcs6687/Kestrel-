@@ -1,0 +1,43 @@
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / Frontend
+node_modules/
+dist/
+build/
+
+# Testing & Coverage
+coverage/
+.coverage
+htmlcov/
+
+# Logs & Databases
+*.log
+*.sqlite
+*.db
+postgres-data/
+pgdata/
+
+# IDE & OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Design references (licensed assets; never commit)
+docs/design-references/*
+!docs/design-references/README.md
