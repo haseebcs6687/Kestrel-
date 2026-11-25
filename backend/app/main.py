@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from app.core.config import Settings, get_settings
 from app.core.logging import setup_logging
 from app.core.middleware import RequestIdAndLoggingMiddleware
+from app.modules.platform.router import router as platform_router
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -24,6 +25,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     app.add_middleware(RequestIdAndLoggingMiddleware)
+    app.include_router(platform_router)
 
     return app
 
