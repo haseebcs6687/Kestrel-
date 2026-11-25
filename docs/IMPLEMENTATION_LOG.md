@@ -1,5 +1,36 @@
 # Implementation Log — Kestrel AI Control Center
 
+## 2026-11-26 — Milestone 1: Docker Environment & PostgreSQL Development Database
+
+### Objectives
+- Verify Docker daemon and Docker Compose availability on Windows 11 host.
+- Author `.env.example` template with placeholder values for PostgreSQL configuration.
+- Generate local `.env` with a 36-character cryptographically secure password (alphanumeric).
+- Create `compose.yaml` with pinned `postgres:17` image, localhost-only binding (`127.0.0.1:5432`), named volume `kestrel_pgdata`, and `pg_isready` healthcheck.
+- Verify container startup, healthy status, `SELECT version()`, volume persistence across `down`/`up` cycles, and complete table cleanup.
+- Enforce strict secret hygiene: ensure `.env` remains ignored and real secrets never leak into git.
+
+### Files Created & Modified
+- `.env.example`: Committed template for database credentials and host port.
+- `compose.yaml`: Local container orchestration definition for PostgreSQL 17.
+- `.env`: Local development secrets (git-ignored, verified absent from git tracking).
+- `README.md`: Added "Local development" workflow and updated status to Milestone 1.
+- `docs/ARCHITECTURE_DECISIONS.md`: Added ADR-012 documenting Docker Compose and PostgreSQL 17 pinning.
+- `docs/PROJECT_STATUS.md`: Marked Milestone 0 as merged and Milestone 1 as complete.
+- `docs/PROJECT_CONTEXT.md`: Recorded Docker/Compose versions, compose path, database user/name, and port.
+- `docs/IMPLEMENTATION_LOG.md`: Added Milestone 1 entry.
+- `docs/LEARNING_NOTES.md`: Added structured learning notes for Milestone 1 (< 40 lines).
+- `docs/TODO.md`: Updated checklist and defined Milestone 2 next action.
+
+### Decisions & Deviations
+- Host required Windows Virtual Machine Platform feature enablement and reboot before Docker daemon initialization.
+- Configured `C:\Users\HP\.wslconfig` with `memory=6GB` and `processors=4` to constrain resource usage.
+- Password generated using `[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes()` for 36-character alphanumeric entropy.
+- SQL commands executed via container stdin to ensure robust parsing across PowerShell and POSIX shells.
+- All persistence checks passed: test table verified across container recreation and cleanly dropped. Database left running in healthy state.
+
+---
+
 ## 2026-11-25 — Milestone 0: Repository Bootstrap and Documentation System
 
 ### Objectives

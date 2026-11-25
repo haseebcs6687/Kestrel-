@@ -65,3 +65,9 @@
 - **Context**: Pre-aggregating latency into hourly or daily rollups prevents accurate multi-window percentile calculations (`p50`, `p95`, `p99`) because percentiles cannot be mathematically averaged.
 - **Decision**: Retain raw event latency for accurate percentile calculations across arbitrary query windows; restrict rollups exclusively to additive metrics (request counts, token sums, cost totals).
 - **Consequences**: Guarantees mathematically accurate latency percentiles; requires scheduled retention pruning of aged raw events once beyond the active detailed query window.
+
+### ADR 012: Docker Compose for Local Dependencies; PostgreSQL 17 Pinned
+- **Status**: Accepted
+- **Context**: Local development requires a consistent, reproducible PostgreSQL environment that matches target deployment without forcing developers to install native PostgreSQL server instances on Windows host machines.
+- **Decision**: Use Docker Compose (`compose.yaml`) with major version pinned to `postgres:17`, binding exclusively to `127.0.0.1:${POSTGRES_PORT:-5432}` and storing database state in a named Docker volume (`kestrel_pgdata`).
+- **Consequences**: Ensures predictable database behavior across developer environments; protects database port from external network exposure; persists development data across `docker compose down` while allowing clean resets via `docker compose down -v`.

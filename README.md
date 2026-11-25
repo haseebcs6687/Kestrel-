@@ -2,7 +2,7 @@
 
 Kestrel AI Control Center is an observability and operations dashboard for LLM-powered applications. It tracks usage, token consumption, cost, latency, errors, provider health, and operational alerts across AI systems, providing engineering teams with centralized visibility and control over their LLM integrations.
 
-**Status: in development — Milestone 0**
+**Status: in development — Milestone 1**
 
 ## Tech Stack
 
@@ -18,7 +18,7 @@ Kestrel AI Control Center is an observability and operations dashboard for LLM-p
 
 - [Product Requirements Document (PRD)](docs/PRD.md) — Product vision, user roles, functional and non-functional requirements.
 - [System Architecture](docs/ARCHITECTURE.md) — Process topology, architectural invariants, backend modules, and provider adapter design.
-- [Architecture Decisions (ADRs)](docs/ARCHITECTURE_DECISIONS.md) — 11 Architecture Decision Records documenting key engineering trade-offs.
+- [Architecture Decisions (ADRs)](docs/ARCHITECTURE_DECISIONS.md) — 12 Architecture Decision Records documenting key engineering trade-offs.
 - [Learning Notes](docs/LEARNING_NOTES.md) — Key conceptual definitions, operational rationale, and interview takeaways.
 - [Project Context](docs/PROJECT_CONTEXT.md) — Compact context for agent continuity and environment state.
 - [Project Status](docs/PROJECT_STATUS.md) — Current milestone status matrix and implementation tracking.
@@ -27,8 +27,30 @@ Kestrel AI Control Center is an observability and operations dashboard for LLM-p
 
 ## Implementation Status
 
-**Implemented**: Repository skeleton and documentation only. No application code, dependency installations, or Docker services have been scaffolded yet.
+**Implemented**: Repository skeleton, documentation system, and Docker Compose local development environment with a healthy PostgreSQL 17 database container and persistent volume.
 
-## Run Instructions
+## Local Development
 
-Coming in Milestone 1 (Docker Compose environment and FastAPI skeleton with `/health`).
+### Prerequisites
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows with WSL 2 backend)
+
+### Starting the Database
+1. Copy the environment template to create your local `.env`:
+   ```bash
+   cp .env.example .env
+   ```
+2. In `.env`, set a strong local `POSTGRES_PASSWORD`.
+3. Start PostgreSQL in the background:
+   ```bash
+   docker compose up -d
+   ```
+4. Verify container health:
+   ```bash
+   docker compose ps
+   ```
+5. Stop containers while preserving database data:
+   ```bash
+   docker compose down
+   ```
+   > [!WARNING]
+   > Running `docker compose down -v` removes the named volume and **permanently deletes** all local database data.
