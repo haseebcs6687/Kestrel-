@@ -1,0 +1,30 @@
+# Project name used to namespace containers, networks, and volumes
+name: kestrel
+
+services:
+  postgres:
+    # Pinned to major version 17 for stability and deterministic behavior across machines
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      # Credentials and initial database name loaded from .env via variable interpolation
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      # Bind exclusively to 127.0.0.1 (localhost) to prevent exposing PostgreSQL to the local network or public interfaces
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # Named volume mapped to Postgres data directory; preserves database state across container recreation
+      - kestrel_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # pg_isready probes the server readiness using the configured user and database
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  # Named volume managed by Docker, decoupled from container lifecycle
+  kestrel_pgdata:
