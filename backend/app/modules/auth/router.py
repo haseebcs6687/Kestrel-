@@ -189,7 +189,7 @@ def refresh_session(
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",  # noqa: S106
-        expires_in=settings.jwt_access_token_expire_minutes * 60,
+        expires_in=settings.access_token_minutes * 60,
     )
 
 
