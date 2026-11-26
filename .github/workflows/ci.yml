@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - "ci-test/**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: "Backend: lint, migrations, tests"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: kestrel
+          POSTGRES_PASSWORD: ci_only_ephemeral_password
+          POSTGRES_DB: kestrel
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: kestrel
+      POSTGRES_PASSWORD: ci_only_ephemeral_password
+      POSTGRES_DB: kestrel
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.4.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "backend/uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Generate and mask JWT secret key
+        run: |
+          python3 -c "import os, secrets; key = secrets.token_urlsafe(48); print(f'::add-mask::{key}'); open(os.environ['GITHUB_ENV'], 'a').write(f'JWT_SECRET_KEY={key}\n')"
+
+      - name: Ruff lint check
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Run database migrations
+        run: uv run alembic upgrade head
+
+      - name: Check for schema drift
+        run: uv run alembic check
+
+      - name: Run test suite
+        run: uv run pytest -ra
+
+  secrets:
+    name: "Secret scan"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Run in-repo secret scan script
+        run: python3 scripts/secret_scan.py
+
+      - name: Run Gitleaks scan
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  dependency-audit:
+    name: "Dependency audit (advisory)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.4.0
+
+      - name: Export locked dependencies
+        run: uv export --no-hashes --no-emit-project -o requirements.txt
+        working-directory: backend
+
+      - name: Audit dependencies with pip-audit (advisory)
+        run: uvx pip-audit --no-deps --disable-pip -r requirements.txt
+        working-directory: backend
