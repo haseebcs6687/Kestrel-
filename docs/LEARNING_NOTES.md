@@ -5,6 +5,35 @@ Each entry follows: Concept | Definition | Why it matters | How we used it | Arc
 
 ---
 
+## Learning Notes — Milestone 2: Backend Skeleton & Probes
+
+- **Concepts Covered**: Application factory pattern, dependency injection with `get_db`, Pydantic Settings & `SecretStr`, liveness vs readiness probes, request IDs and structured logging, sync vs async endpoints, and lockfile determinism.
+- **Definitions & Architecture**:
+  - *App Factory (`create_app`)*: Encapsulates application instantiation, allowing independent configuration for testing, development, and production environments.
+  - *Dependency Injection (`get_db`)*: Yields database sessions per request, ensuring automatic connection cleanup in a `finally` block regardless of request outcome.
+  - *`SecretStr`*: Masked string type in Pydantic that prevents credentials from leaking in logs, tracebacks, `str()`, or `repr()`.
+  - *Liveness (`/health`) vs Readiness (`/health/ready`)*: Liveness confirms the web process is running; readiness confirms backing infrastructure (PostgreSQL) is operational to serve traffic.
+  - *Request IDs (`X-Request-ID`)*: Distributed tracing identifier bound to task-local contextvars, attached to every log record and echoed in response headers.
+  - *Sync vs Async Endpoints*: With synchronous SQLAlchemy 2.0, endpoints are plain `def`, allowing FastAPI to manage execution in an external threadpool without blocking the async event loop.
+  - *Lockfile (`uv.lock`)*: Immutable dependency manifest pinning transitive packages across all development and deployment machines.
+- **Terminology**: App factory, Dependency injection, `SecretStr`, Liveness probe, Readiness probe, Contextvars, `X-Request-ID`, Threadpool worker, Lockfile.
+- **Example**: `client.get("/health/ready")` executes `SELECT 1`; if PostgreSQL is stopped, returns HTTP 503 `{"status": "unavailable", "checks": {"database": "fail"}}` with no leaked error text.
+- **Interview Questions & Answers**:
+  1. *Q: Why should readiness probes fail when dependencies are down, while liveness probes continue to succeed?*
+     A: If liveness fails on database outage, orchestrators restart web containers in an unrecoverable crash loop; readiness failure simply halts incoming traffic until the database recovers.
+  2. *Q: Why define FastAPI endpoints as plain `def` instead of `async def` when using synchronous SQLAlchemy?*
+     A: Calling synchronous blocking database queries inside an `async def` endpoint blocks the single-threaded asyncio event loop; plain `def` endpoints are safely offloaded to FastAPI's threadpool.
+  3. *Q: How does `SecretStr` prevent accidental secret leakage?*
+     A: It overrides `__str__` and `__repr__` to display `**********`; developers must explicitly call `.get_secret_value()` to access the raw plaintext string.
+  4. *Q: Why validate incoming `X-Request-ID` headers against a strict regex before binding?*
+     A: Prevents log injection, header injection, and unconstrained memory allocation from malicious or malformed client identifiers.
+  5. *Q: What problem does a lockfile (`uv.lock`) solve that `pyproject.toml` dependencies do not?*
+     A: `pyproject.toml` declares version ranges; `uv.lock` pins the exact transitive dependency graph and cryptographic hashes, preventing unexpected breaking updates.
+- **Practical Mistakes**: Concatenating connection strings with unescaped passwords; running blocking sync DB calls in `async def`; returning raw database exceptions in readiness error responses.
+- **Revision Summary**: Milestone 2 delivers an unversioned health/readiness probe architecture, sanitized configuration, and correlation request logging using `uv` and FastAPI.
+
+---
+
 ## Learning Notes — Milestone 1: Docker & PostgreSQL Containerization
 
 - **Concepts Covered**: Image vs container lifecycle, persistent Docker volumes, localhost-only port binding, container healthchecks, and environment secret hygiene.

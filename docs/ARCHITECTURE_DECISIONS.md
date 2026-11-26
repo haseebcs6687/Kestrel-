@@ -71,3 +71,21 @@
 - **Context**: Local development requires a consistent, reproducible PostgreSQL environment that matches target deployment without forcing developers to install native PostgreSQL server instances on Windows host machines.
 - **Decision**: Use Docker Compose (`compose.yaml`) with major version pinned to `postgres:17`, binding exclusively to `127.0.0.1:${POSTGRES_PORT:-5432}` and storing database state in a named Docker volume (`kestrel_pgdata`).
 - **Consequences**: Ensures predictable database behavior across developer environments; protects database port from external network exposure; persists development data across `docker compose down` while allowing clean resets via `docker compose down -v`.
+
+### ADR 013: uv with pyproject.toml and uv.lock for Python Dependencies
+- **Status**: Accepted
+- **Context**: Python dependency management must be fast, deterministic, cross-platform, and fully reproducible across local Windows development and CI pipelines without lockfile discrepancy.
+- **Decision**: Adopt `uv` with standard PEP 621 `pyproject.toml` and lockfile `uv.lock` for all backend packaging and virtual environments.
+- **Consequences**: Delivers sub-second package resolution and installation; eliminates pip-compile divergence; standardizes tool configurations (ruff, pytest) inside a single file.
+
+### ADR 014: API Conventions: Product Endpoints under /api/v1; Probes Unversioned at Root
+- **Status**: Accepted
+- **Context**: Infrastructure probes (Kubernetes, Compose, reverse proxies) require standard static paths for liveness and readiness, whereas product business APIs evolve with explicit version deprecation lifecycles.
+- **Decision**: Expose operational infrastructure probes (`/health`, `/health/ready`) unversioned at the server root; route all application domain endpoints under `/api/v1`.
+- **Consequences**: Shields cluster monitoring from product API version deprecations; keeps internal infrastructure probes clean and lightweight.
+
+### ADR 015: Direct-to-Main Workflow with Milestone Tags and a Pre-Push Quality Gate
+- **Status**: Accepted
+- **Context**: A solo engineering cadence requires eliminating pull request latency while preserving strict repository safety, traceable rollback points, and non-negotiable code quality.
+- **Decision**: Commit directly to `main` with Conventional Commits, tagging each completed milestone (e.g. `m1-docker-postgres`, `m2-backend-skeleton`) and enforcing a mandatory pre-push quality gate (`ruff check`, `ruff format --check`, `pytest`, secret scan).
+- **Consequences**: Maximizes development velocity without branch sprawl; tags provide exact immutable rollback points; pre-push gates guarantee broken code or secrets never land on `main`.

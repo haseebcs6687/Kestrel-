@@ -1,5 +1,48 @@
 # Implementation Log — Kestrel AI Control Center
 
+## 2026-11-26 — Milestone 2: Backend Skeleton & Operational Probes
+
+### Objectives
+- Transition development workflow to direct-to-main with milestone tags and automated pre-push quality gates (ADR-015).
+- Establish `uv` tooling with `pyproject.toml` and deterministic `uv.lock` for backend dependencies (ADR-013).
+- Implement FastAPI application factory (`create_app`), Pydantic Settings with `SecretStr` password masking, and Structlog logging.
+- Implement `RequestIdAndLoggingMiddleware` extracting, validating, and generating `X-Request-ID`, and logging access duration.
+- Implement lazy database connection module (`app/core/db.py`) with connection pooling and `get_db` session dependency.
+- Expose unversioned liveness (`GET /health`) and readiness (`GET /health/ready`) probes at the server root (ADR-014).
+- Author automated pytest suite running against real PostgreSQL container with 100% pass rate.
+- Execute live server verification and failure drill (stopping/starting PostgreSQL) with explicit timeouts.
+
+### Files Created & Modified
+- `backend/pyproject.toml`: Project metadata, dependencies, ruff, and pytest configurations.
+- `backend/uv.lock`: Deterministic dependency lockfile.
+- `backend/app/main.py`: `create_app()` factory, middleware registration, and router inclusion.
+- `backend/app/core/config.py`: Settings model loading from environment and root `.env` with secret masking.
+- `backend/app/core/db.py`: Lazy SQLAlchemy engine, sessionmaker, and `get_db` generator.
+- `backend/app/core/logging.py`: Structlog configuration supporting JSON (prod) and console (dev/test) formatters.
+- `backend/app/core/middleware.py`: Request-ID propagation and structured access duration logging.
+- `backend/app/modules/platform/schemas.py`: Response schemas for `/health` and `/health/ready`.
+- `backend/app/modules/platform/router.py`: Liveness and readiness probe implementations using sync `def`.
+- `backend/tests/conftest.py`: Fixtures with cache clearing and dependency override teardown.
+- `backend/tests/test_config.py`: Configuration and secret masking test cases.
+- `backend/tests/test_health.py`: Live and unreachable database probe test cases.
+- `backend/tests/test_request_id.py`: Request-ID generation and validation test cases.
+- `backend/README.md`: Backend documentation, layout, commands, and endpoint table.
+- `README.md`: Added backend running instructions and updated status to Milestone 2.
+- `docs/ARCHITECTURE_DECISIONS.md`: Added ADR-013 (`uv`), ADR-014 (probe routing conventions), and ADR-015 (direct-to-main workflow).
+- `docs/PROJECT_STATUS.md`: Marked Milestone 2 complete.
+- `docs/PROJECT_CONTEXT.md`: Recorded direct-to-main workflow, package versions, and Milestone 3 next action.
+- `docs/LEARNING_NOTES.md`: Added Milestone 2 learning notes (< 45 lines).
+- `docs/TODO.md`: Ticked Milestone 2 tasks and added Milestone 3.
+
+### Decisions & Deviations
+- Fast-forward merged Milestone 1 to `main`, pushed to `origin/main`, and tagged `m1-docker-postgres`.
+- Switched to direct-to-main workflow without milestone feature branches, enforcing pre-push quality gates.
+- Resolved Ruff rule B008 by using modern `Annotated[Session, Depends(get_db)]` parameter typing in platform router.
+- Configured Ruff per-file-ignores for `tests/*` covering `S101` (assert), `S105` (hardcoded password strings in test data), and `S106`.
+- Live failure drill executed with detached uvicorn process and `--max-time 5` curl timeouts; verified 503 during outage and recovery to 200 after container restart. Zero secrets leaked in logs.
+
+---
+
 ## 2026-11-26 — Milestone 1: Docker Environment & PostgreSQL Development Database
 
 ### Objectives
@@ -9,25 +52,6 @@
 - Create `compose.yaml` with pinned `postgres:17` image, localhost-only binding (`127.0.0.1:5432`), named volume `kestrel_pgdata`, and `pg_isready` healthcheck.
 - Verify container startup, healthy status, `SELECT version()`, volume persistence across `down`/`up` cycles, and complete table cleanup.
 - Enforce strict secret hygiene: ensure `.env` remains ignored and real secrets never leak into git.
-
-### Files Created & Modified
-- `.env.example`: Committed template for database credentials and host port.
-- `compose.yaml`: Local container orchestration definition for PostgreSQL 17.
-- `.env`: Local development secrets (git-ignored, verified absent from git tracking).
-- `README.md`: Added "Local development" workflow and updated status to Milestone 1.
-- `docs/ARCHITECTURE_DECISIONS.md`: Added ADR-012 documenting Docker Compose and PostgreSQL 17 pinning.
-- `docs/PROJECT_STATUS.md`: Marked Milestone 0 as merged and Milestone 1 as complete.
-- `docs/PROJECT_CONTEXT.md`: Recorded Docker/Compose versions, compose path, database user/name, and port.
-- `docs/IMPLEMENTATION_LOG.md`: Added Milestone 1 entry.
-- `docs/LEARNING_NOTES.md`: Added structured learning notes for Milestone 1 (< 40 lines).
-- `docs/TODO.md`: Updated checklist and defined Milestone 2 next action.
-
-### Decisions & Deviations
-- Host required Windows Virtual Machine Platform feature enablement and reboot before Docker daemon initialization.
-- Configured `C:\Users\HP\.wslconfig` with `memory=6GB` and `processors=4` to constrain resource usage.
-- Password generated using `[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes()` for 36-character alphanumeric entropy.
-- SQL commands executed via container stdin to ensure robust parsing across PowerShell and POSIX shells.
-- All persistence checks passed: test table verified across container recreation and cleanly dropped. Database left running in healthy state.
 
 ---
 
@@ -39,27 +63,3 @@
 - Establish monorepo skeleton (`backend/`, `frontend/`, `infra/`, `docs/`, `.github/`).
 - Author core project documentation (PRD, Architecture, ADRs, Context, Status, Learning Notes, TODO).
 - Verify secret exclusion and branch tracking on remote.
-
-### Files Created
-- `.gitignore`: Comprehensive ignore rules for env files, keys, caches, dependencies, data, and design references.
-- `.gitattributes`: Line ending normalization (`* text=auto eol=lf`).
-- `README.md`: Project summary, tech stack, documentation links, and implementation status.
-- `backend/README.md`: Purpose and planned layout for FastAPI and background worker.
-- `frontend/README.md`: Purpose and planned layout for React Vite SPA and component system.
-- `infra/README.md`: Purpose and planned layout for Docker, Nginx, Prometheus, Grafana, and CI.
-- `docs/PRD.md`: Full product requirements document including FR-01 through FR-19, NFRs, deferred scope, and DoD.
-- `docs/ARCHITECTURE.md`: Process topology, architectural invariants, backend modules, and provider adapter design.
-- `docs/ARCHITECTURE_DECISIONS.md`: 11 ADRs covering architecture, datastore, telemetry, security, and frontend.
-- `docs/LEARNING_NOTES.md`: Structured notes on monorepo, git hygiene, PR workflow, and architectural decisions.
-- `docs/PROJECT_CONTEXT.md`: Compact operational context and developer environment specifications.
-- `docs/PROJECT_STATUS.md`: Milestone status tracking matrix and implementation state.
-- `docs/IMPLEMENTATION_LOG.md`: Initial log entry for Milestone 0.
-- `docs/TODO.md`: Detailed inventory of remaining planning specifications and Milestone 1 targets.
-- `docs/design-references/README.md`: Strict usage policy regarding third-party design references.
-- `.github/pull_request_template.md`: Pull request checklist for testing, documentation, and secret hygiene.
-
-### Decisions & Git Operations
-- Root commit created on branch `main` containing only `.gitignore`, `.gitattributes`, and initial README.md, pushed to remote.
-- Development branch `milestone/00-bootstrap` created for all milestone documentation and structure files.
-- Local repository git identity set to `haseebcs6687` (`haseebcs6687@users.noreply.github.com`) without modifying global config.
-- Zero application code, dependencies, or Docker components scaffolded, in strict adherence to Milestone 0 boundaries.

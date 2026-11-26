@@ -2,7 +2,7 @@
 
 Kestrel AI Control Center is an observability and operations dashboard for LLM-powered applications. It tracks usage, token consumption, cost, latency, errors, provider health, and operational alerts across AI systems, providing engineering teams with centralized visibility and control over their LLM integrations.
 
-**Status: in development — Milestone 1**
+**Status: in development — Milestone 2**
 
 ## Tech Stack
 
@@ -18,21 +18,23 @@ Kestrel AI Control Center is an observability and operations dashboard for LLM-p
 
 - [Product Requirements Document (PRD)](docs/PRD.md) — Product vision, user roles, functional and non-functional requirements.
 - [System Architecture](docs/ARCHITECTURE.md) — Process topology, architectural invariants, backend modules, and provider adapter design.
-- [Architecture Decisions (ADRs)](docs/ARCHITECTURE_DECISIONS.md) — 12 Architecture Decision Records documenting key engineering trade-offs.
+- [Architecture Decisions (ADRs)](docs/ARCHITECTURE_DECISIONS.md) — 15 Architecture Decision Records documenting key engineering trade-offs.
 - [Learning Notes](docs/LEARNING_NOTES.md) — Key conceptual definitions, operational rationale, and interview takeaways.
-- [Project Context](docs/PROJECT_CONTEXT.md) — Compact context for agent continuity and environment state.
+- [Project Context](docs/PROJECT_CONTEXT.md) — Compact context for agent continuity, environment state, and direct-to-main workflow.
 - [Project Status](docs/PROJECT_STATUS.md) — Current milestone status matrix and implementation tracking.
 - [Implementation Log](docs/IMPLEMENTATION_LOG.md) — Chronological log of milestones and modifications.
 - [TODO](docs/TODO.md) — Remaining planning specs and upcoming milestones.
 
 ## Implementation Status
 
-**Implemented**: Repository skeleton, documentation system, and Docker Compose local development environment with a healthy PostgreSQL 17 database container and persistent volume.
+**Implemented**: Repository skeleton, documentation system, Docker Compose PostgreSQL 17 development environment, and FastAPI backend skeleton with configuration, structured logging, request-ID middleware, database connection module, `/health` (liveness) and `/health/ready` (readiness) probes, and automated test suite.
 
 ## Local Development
 
 ### Prerequisites
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows with WSL 2 backend)
+- [Python 3.13](https://www.python.org/)
+- [`uv`](https://docs.astral.sh/uv/) package and tool manager
 
 ### Starting the Database
 1. Copy the environment template to create your local `.env`:
@@ -54,3 +56,22 @@ Kestrel AI Control Center is an observability and operations dashboard for LLM-p
    ```
    > [!WARNING]
    > Running `docker compose down -v` removes the named volume and **permanently deletes** all local database data.
+
+### Running the Backend API
+1. Ensure the PostgreSQL container is running (`docker compose up -d`).
+2. Navigate to the backend directory:
+   ```bash
+   cd backend
+   ```
+3. Install dependencies using uv:
+   ```bash
+   uv sync
+   ```
+4. Start the development server:
+   ```bash
+   uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+   ```
+5. Run tests:
+   ```bash
+   uv run pytest -v
+   ```
