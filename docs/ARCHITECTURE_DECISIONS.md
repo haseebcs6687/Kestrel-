@@ -223,3 +223,39 @@
   - Up to 64-character request IDs are persisted without truncation.
   - Audit history is permanently protected against cascade deletion when tenant workspaces are removed.
   - Zero risk of spoofed IP address or user-agent data poisoning the audit trail.
+
+---
+
+## ADR-028: GitHub Actions CI: PostgreSQL Service Container, uv Sync --locked, Least-Privilege Permissions, and Cancel-in-Progress
+
+- **Status**: Accepted (2026-11-26)
+- **Context**: In line with ADR-003, all tests must execute against real PostgreSQL rather than mocks or SQLite. Automated continuous integration is required to enforce this constraint, validate database migrations, catch schema drift, and run linting on every commit and pull request. The CI environment must prevent secret leakage, run with minimal permissions, and avoid wasting compute on superseded runs.
+- **Decision**:
+  1. Define `.github/workflows/ci.yml` triggering on push to `main` and temporary test branches (`ci-test/**`), pull requests, and manual triggers (`workflow_dispatch`).
+  2. Run a real PostgreSQL 17 Docker service container (`postgres:17`) inside the runner, mapped to `127.0.0.1:5432` with health checks (`pg_isready`).
+  3. Use an obvious, ephemeral mock password (`ci_only_ephemeral_password`) for the PostgreSQL service container; generate a random 48-byte URL-safe `JWT_SECRET_KEY` on each run, immediately masking it with `::add-mask::` before adding it to `$GITHUB_ENV`.
+  4. Restrict workflow permissions to `permissions: contents: read`.
+  5. Enforce deterministic dependency installation with `astral-sh/setup-uv@v10.4.0` and `uv sync --locked`, caching dependencies on `backend/uv.lock`.
+  6. Configure concurrency group `ci-${{ github.ref }}` with `cancel-in-progress: true` to abort superseded jobs automatically.
+- **Consequences**:
+  - CI environment mirrors local production-identical PostgreSQL setup (ADR-003).
+  - Schema drift (`alembic check`) and migration health (`alembic upgrade head`) are verified continuously.
+  - Zero secrets or credentials are bound in CI configuration; tokens are masked and discarded when the job ends.
+  - Runner compute is conserved by cancelling outdated runs upon subsequent pushes.
+
+---
+
+## ADR-029: Secret Scanning via In-Repo Stdlib Script and Gitleaks, with Advisory Dependency Vulnerability Auditing
+
+- **Status**: Accepted (2026-11-26)
+- **Context**: Committing secrets (passwords, private keys, API credentials) to public repositories is irreversible and hazardous. Developers need immediate local feedback before pushing to prevent secret leakage, and CI needs automated verification before code enters `main`. Additionally, dependencies must be checked for vulnerabilities without causing sudden build outages when external advisories are published.
+- **Decision**:
+  1. Implement an in-repo Python standard-library secret scanner (`scripts/secret_scan.py`) that uses `git grep -nIE` to search for known credential patterns (database passwords, JWT secret keys, API key prefixes `sk-`, `AIza`, `gsk_`, private key headers, and forbidden `.env*` files).
+  2. Mandate `python scripts/secret_scan.py` as part of the local pre-push quality gate across all environments.
+  3. In CI, run dual-layer secret scanning: `scripts/secret_scan.py` followed by `gitleaks/gitleaks-action@v3` on full repository history (`fetch-depth: 0`).
+  4. Run dependency vulnerability scanning via `uv export` and `uvx pip-audit` in an isolated job marked `continue-on-error: true` (advisory).
+- **Consequences**:
+  - Developers can run the exact secret scanning tool locally with zero third-party dependencies.
+  - Secret scanning outputs only file paths and line numbers, never matching token text.
+  - Dual-layer CI secret scanning protects against both custom project-specific leaks and broad common credential formats.
+  - Advisory status on `pip-audit` provides immediate visibility into newly discovered CVEs without blocking critical releases or developer velocity while fixes or upstream updates are pending.

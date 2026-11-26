@@ -10,19 +10,21 @@
   - Milestone 4: Authentication core, Argon2id password hashing, JWT bearer tokens, RBAC, and workspace-scoped repository isolation (Tag: `m4-auth-core`).
   - Milestone 5: Sessions and audit: DB-backed opaque refresh tokens with rotation and reuse detection, HttpOnly cookies, and append-only audit trail (Tag: `m5-sessions-audit`).
   - Milestone 5b: Corrective rebuild of `audit_logs` via migration 0003, request-ID 64-character fix, model and repository updates, and full constraint test coverage (Tag: `m5b-schema-fix`).
-- **Current Milestone**: Milestone 5b complete; preparing Milestone 6.
+  - Milestone 6: GitHub Actions CI for backend: PostgreSQL 17 service container, uv sync, lint, migration drift check, pytest test suite, dual-layer secret scanning (in-repo script + Gitleaks), and advisory dependency vulnerability auditing (Tag: `m6-ci`).
+- **Current Milestone**: Milestone 6 complete; preparing Milestone 7.
 - **Known Bugs**: None.
-- **Next Action**: Milestone 6 (API keys & Ingestion API `POST /api/v1/ingest/events`).
+- **Next Action**: Milestone 7 (Workspace CRUD, membership, invitations, and switcher).
 
 ## Development Workflow
 - **Direct-to-Main**: Development proceeds directly on branch `main` using Conventional Commits. No feature branch overhead or pull request delays for solo implementation.
-- **Milestone Tags**: Each completed milestone is tagged on `main` (e.g. `m1-docker-postgres`, `m2-backend-skeleton`, `m5-sessions-audit`) to provide immutable rollback points.
-- **Pre-Push Quality Gate**: Before pushing to `main`, four automated checks must pass:
-  1. `uv run ruff check .`
-  2. `uv run ruff format --check .`
-  3. `uv run pytest -v` (against real PostgreSQL container, 106 tests passing)
-  4. `uv run alembic check` (zero drift)
-  5. Secret audit (`git grep -F` for real database password, JWT secrets, and regex for key patterns `sk-`, `AIza`, `gsk_`).
+- **Milestone Tags**: Each completed milestone is tagged on `main` (e.g. `m1-docker-postgres`, `m2-backend-skeleton`, `m5-sessions-audit`, `m6-ci`) to provide immutable rollback points.
+- **Pre-Push Quality Gate**: Before pushing to `main`, six automated checks must pass:
+  1. `uv run ruff check .` (from `backend/`)
+  2. `uv run ruff format --check .` (from `backend/`)
+  3. `uv run alembic upgrade head` (from `backend/`)
+  4. `uv run alembic check` (zero schema drift, from `backend/`)
+  5. `uv run pytest -ra` (against real PostgreSQL container, 112 tests passing, from `backend/`)
+  6. `python scripts/secret_scan.py` (from repo root, scanning tracked files and forbidden `.env*` files)
 
 ## Architecture & Technology Summary
 1. Modular monolith architecture with a separate worker process sharing database models and code.
@@ -71,6 +73,7 @@ backend/
     versions/
       0001_create_workspaces_and_users.py
       0002_create_refresh_tokens_and_audit_logs.py
+      0003_rebuild_audit_logs_to_match_schema_design.py
   tests/
     conftest.py             # TestClient, kestrel_test DB engine, and savepoint fixtures
     test_audit.py           # Audit service, sanitization, and endpoint RBAC/isolation tests
@@ -82,6 +85,12 @@ backend/
     test_migrations.py      # Alembic upgrade/downgrade/upgrade lifecycle and drift tests
     test_models_workspaces_users.py # Workspace and User ORM models & constraint tests
     test_request_id.py      # X-Request-ID propagation, validation, and generation tests
+    test_secret_scan_script.py # Secret scanner script behavior and synthetic detection tests
     test_sessions.py        # Refresh token rotation, reuse detection, cookie, and logout tests
     test_tenancy.py         # WorkspaceScopedRepository isolation tests
+scripts/
+  secret_scan.py            # In-repo standard library secret scanner
+.github/
+  workflows/
+    ci.yml                  # GitHub Actions CI workflow (backend, secrets, dependency-audit)
 ```

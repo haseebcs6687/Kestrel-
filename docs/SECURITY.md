@@ -90,7 +90,7 @@ Kestrel uses a shared-database, shared-schema multi-tenancy model isolated at th
 ## 7. Secret Hygiene & Defense-in-Depth
 
 - **Pydantic `SecretStr`**: Sensitive settings (`postgres_password`, `jwt_secret_key`) use `SecretStr`, which masks output in logs, exceptions, and `repr()`.
-- **Secret Scanning Quality Gate**: Every commit and push requires automated regex and literal scans for database passwords, JWT secrets, and provider API key prefixes (`sk-`, `AIza`, `gsk_`).
+- **Secret Scanning Quality Gate (ADR-029)**: Every commit and push requires automated regex and literal scans via `python scripts/secret_scan.py` for database passwords, JWT secrets, forbidden `.env*` files, private keys, and provider API key prefixes (`sk-`, `AIza`, `gsk_`). In CI, this is backed up by `gitleaks/gitleaks-action@v3`.
 - **Startup Protection**: If `JWT_SECRET_KEY` is missing, shorter than 32 characters, or contains the placeholder `change_me`, the application refuses to start.
 - **No-Cache Headers**: Authentication responses set `Cache-Control: no-store` and `Pragma: no-cache` to prevent reverse proxies or browser caches from storing tokens.
 
@@ -103,7 +103,11 @@ Kestrel uses a shared-database, shared-schema multi-tenancy model isolated at th
 | **Rate Limiting** | Known gap; no rate limits on `/auth/login` or `/auth/register` | Slowapi / Redis sliding-window rate limiting on public auth endpoints | Milestone 13 |
 | **Refresh Tokens** | **Resolved** (Milestone 5) | HttpOnly rotating cookies with reuse detection (ADR-024, ADR-026) | Milestone 5 |
 | **Session Revocation** | **Resolved** (Milestone 5) | Family invalidation on logout and reuse detection | Milestone 5 |
-| **Audit Logs** | **Resolved** (Milestone 5) | Append-only `audit_logs` table with request-ID and defense-in-depth sanitization | Milestone 5 |
+| **Audit Logs** | **Resolved** (Milestone 5b) | Rebuilt canonical `audit_logs` table (migration 0003) with 64-char request-ID | Milestone 5b |
+| **Secret Scanning** | **Resolved** (Milestone 6) | In-repo `scripts/secret_scan.py` pre-push gate + Gitleaks action in CI (ADR-029) | Milestone 6 |
+| **Dependency Vulnerability Scanning** | **Resolved (Advisory in CI)** (Milestone 6) | `uv export` + `uvx pip-audit` advisory job in GitHub Actions CI (ADR-029) | Milestone 6 |
 | **CORS** | Restrictive default (same-origin) | Configured explicitly when frontend origin is scaffolded | Milestone 13/14 |
-| **API Keys** | Not yet implemented | SHA-256 hashed ingestion keys with prefix display (`kst_live_`) | Milestone 6 |
+| **API Keys** | Not yet implemented | SHA-256 hashed ingestion keys with prefix display (`kst_live_`) | Milestone 7 |
+| **CI Action Pinning** | Planned | Pin third-party GitHub Actions to full immutable commit SHAs | Future Milestone |
+| **Automated Dependency Updates** | Planned | Dependabot or Renovate for automated pull requests on vulnerable dependencies | Future Milestone |
 | **Password Reset** | Not yet implemented | Time-limited signed reset tokens via email | Future Milestone |

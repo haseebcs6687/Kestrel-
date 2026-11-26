@@ -5,6 +5,29 @@ Each entry follows: Concept | Definition | Why it matters | How we used it | Arc
 
 ---
 
+## Learning Notes — Milestone 6: GitHub Actions CI for Backend
+
+- **Concepts Covered**: Service containers in CI, deterministic lockfile installations, dynamic runner secret masking (`::add-mask::`), dual-layer secret scanning, and advisory dependency vulnerability auditing.
+- **Definitions & Architecture**:
+  - *PostgreSQL Service Container (ADR-003, ADR-028)*: Ubuntu runner hosts an isolated `postgres:17` container mapped to `127.0.0.1:5432` with healthcheck (`pg_isready`), ensuring tests run against production-identical PostgreSQL engine without mocks.
+  - *Dynamic Secret Masking*: Generating ephemeral credentials (`JWT_SECRET_KEY`) at runtime and invoking `echo "::add-mask::$KEY"`; GitHub Actions redaction engine masks every occurrence across step logs and tracebacks.
+  - *Dual-Layer Secret Scanning (ADR-029)*: In-repo stdlib scanner (`scripts/secret_scan.py`) acts as local pre-push gate and CI first line; `gitleaks-action@v3` scans full git history (`fetch-depth: 0`) for comprehensive signature coverage.
+  - *Advisory Dependency Audits*: Running `pip-audit` with `continue-on-error: true` alerts teams to emerging CVEs without blocking immediate pipeline merges when upstream vendor patches are pending.
+- **Terminology**: Service container, `pg_isready`, `add-mask`, Concurrency cancel-in-progress, Ephemeral credential, Advisory audit, Actionlint.
+- **Interview Questions & Answers**:
+  1. *Q: Why use a real PostgreSQL service container in CI instead of SQLite or mocking?*
+     A: SQLite and mocks hide PostgreSQL-specific behaviors: transactional DDL semantics, JSONB operators, identity sequences, and constraint enforcement. Real containers guarantee zero drift between CI test outcomes and production runtime.
+  2. *Q: Why run secret scanning both locally (pre-push) and in CI with dual layers (custom script + Gitleaks)?*
+     A: Local scanning prevents commits from leaking secrets before reaching remotes; CI dual scanning enforces this on PRs and combines project-specific token rules with broad enterprise secret signatures.
+  3. *Q: Why is the dependency vulnerability audit job configured as advisory (`continue-on-error: true`)?*
+     A: Third-party vulnerabilities may lack immediate upstream fixes. Treating audits as advisory gives security visibility without halting developer velocity on zero-day notices outside project control.
+  4. *Q: How does GitHub Actions handle secrets and masking dynamically generated environment variables (e.g. `::add-mask::`)?*
+     A: Calling `::add-mask::<value>` registers the string with the runner log filter, replacing all subsequent stdout/stderr occurrences with `***`, preventing accidental exposure in test or command output.
+- **Practical Mistakes**: Relying on SQLite in CI while deploying PostgreSQL; hardcoding static tokens in CI workflow YAML; failing to set `fetch-depth: 0` for Gitleaks; letting blocking security audits break CI on unfixable third-party notices.
+- **Revision Summary**: Milestone 6 establishes an automated, secure GitHub Actions CI pipeline with real PostgreSQL, dual secret scanning, and deterministic uv caching.
+
+---
+
 ## Learning Notes — Milestone 5b: Audit Logs Schema Alignment, Applied Migration Immutability & Contract Testing
 
 - **Concepts Covered**: Applied migration immutability (ADR-016), forward-migration repair, end-to-end request-ID contract consistency, foreign key ON DELETE RESTRICT on audit history, and reproduction-first bug fixing.

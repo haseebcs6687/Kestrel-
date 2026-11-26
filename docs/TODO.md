@@ -8,6 +8,7 @@
 - [x] **Milestone 4**: Authentication core: Argon2id password hashing, JWT bearer tokens, registration (`/register`), authentication (`/login`), profile (`/me`), RBAC (admin/viewer), workspace-scoped repository isolation (`WorkspaceScopedRepository`), and security architecture (`docs/SECURITY.md`).
 - [x] **Milestone 5**: Sessions and audit: DB-backed opaque refresh tokens with rotation and reuse detection, HttpOnly cookies, append-only audit trail (`audit_logs`), and `/api/v1/audit-logs` endpoint.
 - [x] **Milestone 5b**: Corrective milestone: migration 0003 rebuilds `audit_logs` to match schema design, full 64-char request-ID support, and constraint/session test coverage.
+- [x] **Milestone 6**: GitHub Actions CI for backend (PostgreSQL 17 service container, uv sync, linting, migration drift check, pytest suite, in-repo secret scanner script with tests, Gitleaks, and advisory dependency vulnerability auditing).
 
 ## Remaining Planning Tasks
 - [x] **Database Schema & ERD**: Detailed entity-relationship model covering all 12 tables, constraints, indexes, and Mermaid ERD in `docs/DATABASE_SCHEMA.md`.

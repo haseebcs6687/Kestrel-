@@ -1,5 +1,40 @@
 # Implementation Log — Kestrel AI Control Center
 
+## 2026-11-26 — Milestone 6: GitHub Actions CI for Backend
+
+### Objectives
+- Close Milestone 5b review gaps: review test suite against checklist, add `test_audit_log_order_newest_first` to `backend/tests/test_audit.py`.
+- Implement in-repo standard-library secret scanner `scripts/secret_scan.py`:
+  - Search tracked files using `git grep -nIE` across sensitive patterns (DB passwords, JWT secret keys, API key prefixes `sk-`, `AIza`, `gsk_`, private keys).
+  - Verify absence of forbidden `.env*` files in repository tracking.
+  - Safe reporting: output only file paths, line numbers, and pattern names; never print secret content.
+  - Implement automated test suite in `backend/tests/test_secret_scan_script.py` with runtime synthetic fake tokens.
+- Implement GitHub Actions CI workflow in `.github/workflows/ci.yml`:
+  - Triggers on push to `main` and temporary test branches (`ci-test/**`), pull requests, and `workflow_dispatch`.
+  - Concurrency group `ci-${{ github.ref }}` with `cancel-in-progress: true`.
+  - Least-privilege permissions: `permissions: contents: read`.
+  - `backend` job: Ubuntu runner, real PostgreSQL 17 Docker service container (`postgres:17`) bound to `127.0.0.1:5432` with `pg_isready` healthcheck; deterministic `astral-sh/setup-uv@v10.4.0` with `uv.lock` caching; `uv sync --locked`; dynamically generated and masked `JWT_SECRET_KEY` via `::add-mask::`; `uv run ruff check .`; `uv run ruff format --check .`; `uv run alembic upgrade head`; `uv run alembic check`; `uv run pytest -ra`.
+  - `secrets` job: Full git history checkout (`fetch-depth: 0`), in-repo `python scripts/secret_scan.py`, and `gitleaks/gitleaks-action@v3`.
+  - `dependency-audit` job: Advisory dependency vulnerability scan (`continue-on-error: true`) with `uv export` and `uvx pip-audit`.
+- Validate workflow file syntax locally using `rhysd/actionlint:latest` Docker container.
+- Push to `main`, poll initial CI run, and verify complete green execution.
+- Execute negative probe test on temporary branch `ci-test/negative`: confirm deliberate failure on broken test, verify `secrets` and `dependency-audit` jobs succeed, delete branch.
+- Add CI workflow badge to `README.md`, update security documentation, record ADR-028 and ADR-029, and document learning notes.
+
+### Files Created & Modified
+- `scripts/secret_scan.py`: Standard-library secret scanning script.
+- `backend/tests/test_secret_scan_script.py`: Secret scanner unit and integration tests.
+- `backend/tests/test_audit.py`: Added `test_audit_log_order_newest_first`.
+- `backend/pyproject.toml`: Added `S603` and `S607` per-file ignores for tests.
+- `.github/workflows/ci.yml`: GitHub Actions CI pipeline configuration.
+- `README.md`: Added CI status badge and Continuous Integration section.
+- `docs/ARCHITECTURE_DECISIONS.md`: Added ADR-028 (CI workflow) and ADR-029 (Secret scanning and advisory dependency auditing).
+- `docs/SECURITY.md`: Updated secret scanning and dependency vulnerability scanning statuses; added action pinning roadmap.
+- `docs/LEARNING_NOTES.md`: Added Milestone 6 learning notes and 4 interview Q&As.
+- `docs/ROADMAP.md`, `docs/PROJECT_STATUS.md`, `docs/PROJECT_CONTEXT.md`, `docs/TODO.md`: Updated project tracking.
+
+---
+
 ## 2026-11-26 — Milestone 5b: Corrective Schema Fix & Audit Logs Rebuild (Migration 0003)
 
 ### Objectives
