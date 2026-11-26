@@ -39,35 +39,31 @@ def record(
     *,
     workspace_id: uuid.UUID,
     action: str,
-    resource_type: str,
-    actor_id: uuid.UUID | None = None,
     actor_type: str = "user",
-    resource_id: uuid.UUID | None = None,
+    actor_user_id: uuid.UUID | None = None,
+    target_type: str | None = None,
+    target_id: str | None = None,
     details: dict[str, Any] | None = None,
-    ip_address: str | None = None,
-    user_agent: str | None = None,
 ) -> AuditLog:
     """Record an audit event participating in the caller's database transaction.
 
     Enforces forbidden key defense-in-depth on details, extracts request_id from structlog,
-    flushes to the session without committing, and emits a structured audit event.
+    defensively truncates to 64 characters, flushes without committing, and emits a structured log.
     """
     _validate_details(details)
 
-    truncated_user_agent = user_agent[:512] if user_agent else None
+    sanitized_details = details if details is not None else {}
     request_id = get_contextvars().get("request_id")
-    request_id_str = str(request_id)[:36] if request_id is not None else None
+    request_id_str = str(request_id)[:64] if request_id is not None else None
 
     entry = AuditLog(
         workspace_id=workspace_id,
-        actor_id=actor_id,
         actor_type=actor_type,
+        actor_user_id=actor_user_id,
         action=action,
-        resource_type=resource_type,
-        resource_id=resource_id,
-        details=details,
-        ip_address=ip_address,
-        user_agent=truncated_user_agent,
+        target_type=target_type,
+        target_id=target_id,
+        details=sanitized_details,
         request_id=request_id_str,
     )
     db.add(entry)
@@ -78,6 +74,6 @@ def record(
         action=action,
         workspace_id=str(workspace_id),
         actor_type=actor_type,
-        resource_type=resource_type,
+        target_type=target_type,
     )
     return entry

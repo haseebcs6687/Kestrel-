@@ -10,17 +10,15 @@ from pydantic import BaseModel, ConfigDict
 class AuditLogRead(BaseModel):
     """Schema representing an immutable operational and security audit entry."""
 
-    id: uuid.UUID
+    id: int
     workspace_id: uuid.UUID
-    actor_id: uuid.UUID | None
     actor_type: str
+    actor_user_id: uuid.UUID | None
     action: str
-    resource_type: str
-    resource_id: uuid.UUID | None
-    details: dict[str, Any] | None
-    ip_address: str | None
-    user_agent: str | None
+    target_type: str | None
+    target_id: str | None
     request_id: str | None
+    details: dict[str, Any]
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

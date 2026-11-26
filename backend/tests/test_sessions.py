@@ -198,7 +198,7 @@ def test_refresh_reuse_detection(auth_client: TestClient, db_session: Session) -
     # 5. Check Audit log row
     audit_row = db_session.scalar(
         select(AuditLog).where(
-            AuditLog.actor_id == user.id,
+            AuditLog.actor_user_id == user.id,
             AuditLog.action == "auth.refresh_reuse_detected",
         )
     )
@@ -303,7 +303,7 @@ def test_logout_clears_cookie_and_revokes(auth_client: TestClient, db_session: S
     # Verify Audit log
     audit_row = db_session.scalar(
         select(AuditLog).where(
-            AuditLog.actor_id == user.id,
+            AuditLog.actor_user_id == user.id,
             AuditLog.action == "auth.logout",
         )
     )

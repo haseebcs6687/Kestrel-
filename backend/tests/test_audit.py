@@ -61,33 +61,29 @@ def _create_workspace_and_user(
 def test_audit_record_success(db_session: Session) -> None:
     """Verify audit_service.record writes complete event data to database."""
     workspace, user = _create_workspace_and_user(db_session)
-    res_id = uuid.uuid4()
+    res_id = str(uuid.uuid4())
 
     entry = audit_service.record(
         db_session,
         workspace_id=workspace.id,
         action="user.update",
-        resource_type="user",
-        actor_id=user.id,
+        target_type="user",
+        actor_user_id=user.id,
         actor_type="user",
-        resource_id=res_id,
+        target_id=res_id,
         details={"updated_field": "timezone"},
-        ip_address="192.168.1.100",
-        user_agent="Mozilla/5.0 TestBrowser",
     )
     assert entry.id is not None
 
     db_entry = db_session.scalar(select(AuditLog).where(AuditLog.id == entry.id))
     assert db_entry is not None
     assert db_entry.workspace_id == workspace.id
-    assert db_entry.actor_id == user.id
+    assert db_entry.actor_user_id == user.id
     assert db_entry.actor_type == "user"
     assert db_entry.action == "user.update"
-    assert db_entry.resource_type == "user"
-    assert db_entry.resource_id == res_id
+    assert db_entry.target_type == "user"
+    assert db_entry.target_id == res_id
     assert db_entry.details == {"updated_field": "timezone"}
-    assert db_entry.ip_address == "192.168.1.100"
-    assert db_entry.user_agent == "Mozilla/5.0 TestBrowser"
 
 
 def test_audit_record_forbidden_keys(db_session: Session) -> None:
@@ -109,7 +105,7 @@ def test_audit_record_forbidden_keys(db_session: Session) -> None:
                 db_session,
                 workspace_id=workspace.id,
                 action="test.sensitive",
-                resource_type="test",
+                target_type="test",
                 details=payload,
             )
 
@@ -124,7 +120,7 @@ def test_audit_participates_in_transaction_rollback(db_session: Session) -> None
         db_session,
         workspace_id=workspace.id,
         action="transaction.fail",
-        resource_type="test",
+        target_type="test",
         details={"attempt": 1},
     )
     recorded_id = entry.id
@@ -187,8 +183,8 @@ def test_audit_log_workspace_isolation(auth_client: TestClient, db_session: Sess
         db_session,
         workspace_id=ws_a.id,
         action="alpha.action",
-        resource_type="alpha",
-        actor_id=admin_a.id,
+        target_type="alpha",
+        actor_user_id=admin_a.id,
     )
 
     # Record events in Workspace B
@@ -196,8 +192,8 @@ def test_audit_log_workspace_isolation(auth_client: TestClient, db_session: Sess
         db_session,
         workspace_id=ws_b.id,
         action="beta.action",
-        resource_type="beta",
-        actor_id=admin_b.id,
+        target_type="beta",
+        actor_user_id=admin_b.id,
     )
 
     token_a, _ = create_access_token(admin_a.id)
@@ -229,13 +225,13 @@ def test_audit_log_action_filter(auth_client: TestClient, db_session: Session) -
     workspace, admin = _create_workspace_and_user(db_session, email="filter_admin@example.com")
 
     audit_service.record(
-        db_session, workspace_id=workspace.id, action="auth.login", resource_type="user"
+        db_session, workspace_id=workspace.id, action="auth.login", target_type="user"
     )
     audit_service.record(
-        db_session, workspace_id=workspace.id, action="auth.logout", resource_type="user"
+        db_session, workspace_id=workspace.id, action="auth.logout", target_type="user"
     )
     audit_service.record(
-        db_session, workspace_id=workspace.id, action="auth.refresh", resource_type="user"
+        db_session, workspace_id=workspace.id, action="auth.refresh", target_type="user"
     )
 
     token, _ = create_access_token(admin.id)
@@ -258,7 +254,7 @@ def test_audit_log_pagination(auth_client: TestClient, db_session: Session) -> N
             db_session,
             workspace_id=workspace.id,
             action=f"action.step.{i}",
-            resource_type="step",
+            target_type="step",
         )
 
     token, _ = create_access_token(admin.id)

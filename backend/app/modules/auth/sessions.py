@@ -71,16 +71,12 @@ def rotate_refresh_token(
     db: Session,
     *,
     raw_token: str,
-    ip_address: str | None = None,
-    user_agent: str | None = None,
 ) -> tuple[str, str, User]:
     """Rotate a valid refresh token and detect reuse attacks (ADR-024).
 
     Args:
         db: Active database session.
         raw_token: Plaintext refresh token presented by client cookie.
-        ip_address: Client IP address.
-        user_agent: Client user-agent string.
 
     Returns:
         tuple[str, str, User]: (access_token, new_raw_token, user)
@@ -108,13 +104,11 @@ def rotate_refresh_token(
             db,
             workspace_id=token.workspace_id,
             action="auth.refresh_reuse_detected",
-            actor_id=token.user_id,
             actor_type="user",
-            resource_type="session",
-            resource_id=token.id,
+            actor_user_id=token.user_id,
+            target_type="session",
+            target_id=str(token.id),
             details={"family_id": str(token.family_id), "reason": "revoked_token_presented"},
-            ip_address=ip_address,
-            user_agent=user_agent,
         )
         db.commit()  # CRITICAL: Persist revocation even though request fails
         logger.warning(
@@ -151,13 +145,11 @@ def rotate_refresh_token(
         db,
         workspace_id=user.workspace_id,
         action="auth.refresh",
-        actor_id=user.id,
         actor_type="user",
-        resource_type="session",
-        resource_id=new_token.id,
+        actor_user_id=user.id,
+        target_type="session",
+        target_id=str(new_token.id),
         details={"family_id": str(token.family_id)},
-        ip_address=ip_address,
-        user_agent=user_agent,
     )
     db.commit()
     return access_token, new_raw, user
@@ -167,16 +159,12 @@ def revoke_family_by_token(
     db: Session,
     *,
     raw_token: str,
-    ip_address: str | None = None,
-    user_agent: str | None = None,
 ) -> bool:
     """Revoke all active tokens in the family associated with the presented token.
 
     Args:
         db: Active database session.
         raw_token: Plaintext refresh token presented during logout.
-        ip_address: Client IP address.
-        user_agent: Client user-agent string.
 
     Returns:
         bool: True if tokens were revoked or already revoked; False if token was unknown.
@@ -201,13 +189,11 @@ def revoke_family_by_token(
         db,
         workspace_id=token.workspace_id,
         action="auth.logout",
-        actor_id=token.user_id,
         actor_type="user",
-        resource_type="session",
-        resource_id=token.id,
+        actor_user_id=token.user_id,
+        target_type="session",
+        target_id=str(token.id),
         details={"family_id": str(token.family_id)},
-        ip_address=ip_address,
-        user_agent=user_agent,
     )
     db.commit()
     return True

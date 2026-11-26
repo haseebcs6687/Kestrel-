@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response, status
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.config import (
@@ -72,7 +72,6 @@ def clear_refresh_cookie(response: Response, settings: Settings) -> None:
 )
 def register_user(
     payload: RegisterRequest,
-    request: Request,
     db: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> UserRead:
@@ -84,8 +83,6 @@ def register_user(
             password=payload.password,
             workspace_name=payload.workspace_name,
             settings=settings,
-            ip_address=request.client.host if request.client else None,
-            user_agent=request.headers.get("user-agent"),
         )
     except RegistrationDisabled as exc:
         raise HTTPException(
@@ -110,7 +107,6 @@ def register_user(
 def login_user(
     payload: LoginRequest,
     response: Response,
-    request: Request,
     db: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> TokenResponse:
@@ -123,8 +119,6 @@ def login_user(
             db=db,
             email=payload.email,
             password=payload.password,
-            ip_address=request.client.host if request.client else None,
-            user_agent=request.headers.get("user-agent"),
         )
         raw_refresh_token, _ = issue_refresh_token(
             db=db,
@@ -156,7 +150,6 @@ def login_user(
 )
 def refresh_session(
     response: Response,
-    request: Request,
     db: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
     x_kestrel_client: Annotated[str | None, Header(alias=CSRF_HEADER_NAME)] = None,
@@ -178,8 +171,6 @@ def refresh_session(
     access_token, new_raw, _ = rotate_refresh_token(
         db,
         raw_token=refresh_token,
-        ip_address=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
     )
 
     response.headers["Cache-Control"] = "no-store"
@@ -199,7 +190,6 @@ def refresh_session(
     summary="Revoke refresh token family and clear session cookie",
 )
 def logout_user(
-    request: Request,
     db: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
     x_kestrel_client: Annotated[str | None, Header(alias=CSRF_HEADER_NAME)] = None,
@@ -216,8 +206,6 @@ def logout_user(
         revoke_family_by_token(
             db,
             raw_token=refresh_token,
-            ip_address=request.client.host if request.client else None,
-            user_agent=request.headers.get("user-agent"),
         )
 
     resp = Response(status_code=status.HTTP_204_NO_CONTENT)
