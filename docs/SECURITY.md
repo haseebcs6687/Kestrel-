@@ -10,7 +10,7 @@ Kestrel AI Control Center is a multi-tenant observability and operations control
 ### 2.1 Password Hashing (Argon2id)
 - **Algorithm**: Argon2id via `argon2-cffi` using RFC 9106 recommended defaults (memory-hard, resistant to GPU/ASIC cracking).
 - **Password Policies**: Minimum 12 characters, maximum 128 characters. No arbitrary composition rules that encourage predictable patterns.
-- **Timing Attack Mitigation**: When login fails due to a nonexistent email, `authenticate()` performs a dummy verification against a pre-hashed random value (`get_dummy_hash()`). This equalizes CPU execution time and prevents email enumeration.
+- **Timing Attack Mitigation**: When login fails due to a nonexistent email, `authenticate()` performs a dummy verification against a pre-hashed random value (`get_dummy_hash()`). This equalizes CPU execution time and prevents email enumeration (ADR-023).
 - **Rehashing**: The system inspects `password_needs_rehash()` on every successful login and automatically updates hashes if algorithm parameters evolve.
 
 ### 2.2 Access Tokens (JWT)
@@ -34,19 +34,51 @@ All authenticated requests decode the user UUID from `sub` and query PostgreSQL 
 2. Verifies that `is_active` is `true`. Deactivated users are blocked immediately, even with unexpired JWTs.
 3. Retrieves current `role` (`admin` vs `viewer`) and `workspace_id` fresh from the database.
 
+### 2.4 Sessions & Refresh Token Rotation (ADR-024, ADR-026)
+- **Cryptographic Storage**: Refresh tokens are 288-bit URL-safe random strings generated via `secrets.token_urlsafe(48)`. Only deterministic SHA-256 digests (`token_hash`) are persisted in PostgreSQL; plaintext tokens are never stored.
+- **HttpOnly Cookie Delivery**: Refresh tokens are transmitted exclusively via an `HttpOnly`, `Path=/api/v1/auth`, `SameSite=Strict`, `Secure` (auto-enabled in production) cookie (`kestrel_refresh`). JavaScript has no programmatic access to the token.
+- **Strict Rotation**: On every `/refresh` call, the presented refresh token is revoked, its `replaced_by_id` pointer is set to the successor token, and a fresh access/refresh pair is issued.
+- **Automatic Reuse Detection**: If an already revoked refresh token is presented, Kestrel treats it as active session theft. The entire rotation family (`family_id`) is instantly revoked in a committed transaction, an audit alert is recorded (`auth.refresh_reuse_detected`), and the client receives a generic 401 with a cleared cookie.
+- **Cookie Clearance**: Logging out or encountering an expired, invalid, or reused refresh token automatically instructs the browser to delete the cookie (`Max-Age=0`).
+
 ---
 
-## 3. Multi-Tenant Data Isolation (ADR-022)
+## 3. Operational & Security Audit Trail (ADR-025)
+
+- **PostgreSQL Audit Log**: Immutable append-only operational history stored in `audit_logs` table with composite index `(workspace_id, created_at DESC)`.
+- **Recorded Security Events**:
+  - `auth.register`: User and organization account initialization.
+  - `auth.login`: User authentication success.
+  - `auth.refresh`: Session rotation and access token reissue.
+  - `auth.refresh_reuse_detected`: Security alarm triggering token family invalidation.
+  - `auth.logout`: Session family revocation and cookie cleanup.
+- **Request-ID Correlation**: Automatically binds the active `structlog` request UUID to audit rows for cross-tier log and trace correlation.
+- **Defense-in-Depth Sanitization**: Audit recording service validates all `details` payload dictionaries, throwing an exception if any sensitive security keys or substrings (`password`, `token`, `secret`, `cookie`, `authorization`, `hash`) are detected.
+- **Transactional Consistency**: Standard audit events flush within the caller's database transaction, rolling back automatically if the business operation aborts. Security violations (e.g. reuse detection) execute in an explicit committed transaction to ensure immediate revocation.
+
+---
+
+## 4. Multi-Tenant Data Isolation (ADR-022)
 
 Kestrel uses a shared-database, shared-schema multi-tenancy model isolated at the row level via foreign keys to `workspaces(id)`:
 - **`WorkspaceScopedRepository`**: All tenant-aware repositories inherit from `app.core.tenancy.WorkspaceScopedRepository`.
 - **Automatic Scoping**: Query methods apply `scope(statement, Model)` which binds `Model.workspace_id == self.workspace_id`.
 - **Unscoped Exception**: Only initial email login (`get_user_by_email`) and token decoding (`get_user_by_id`) operate unscoped because the requesting workspace is not yet known.
-- **Foreign Key Invariant**: Relational models enforce `ON DELETE RESTRICT` on `workspace_id` to prevent cascading multi-tenant deletion accidents.
+- **Foreign Key Invariant**: Relational models enforce `ON DELETE RESTRICT` on workspace associations for core accounts, with cascading session and audit cleanups.
 
 ---
 
-## 4. Input Validation & Mass-Assignment Protection
+## 5. Frontend Security Contract
+
+- **Access Token In-Memory Only (ADR-018)**: Short-lived access tokens (15-minute lifespan) are retained strictly in JavaScript application memory (React state/context). They must **never** be written to `localStorage`, `sessionStorage`, or client-side storage.
+- **Cookie Handling**: Browsers manage the `kestrel_refresh` cookie automatically. The client application code cannot and should not attempt to read or modify it.
+- **CSRF Defense-in-Depth**: Because refresh cookies use `SameSite=Strict`, cross-site requests are blocked by modern browsers. For defense-in-depth, `/api/v1/auth/refresh` and `/api/v1/auth/logout` require the custom header `X-Kestrel-Client: web`. Cross-origin HTML forms and scripts cannot set custom headers without CORS preflight approval.
+- **Silent Refresh Strategy**: The frontend schedules silent background refreshes at 80–90% of token lifespan (e.g., at minute 13 of a 15-minute token) by querying `/api/v1/auth/refresh`.
+- **Logout Flow**: Calling `/api/v1/auth/logout` drops the in-memory access token, revokes the server-side session family, and receives a cookie deletion instruction.
+
+---
+
+## 6. Input Validation & Mass-Assignment Protection
 
 - **Pydantic Validation**: All request models use Pydantic v2 schemas with `ConfigDict(extra="forbid")`.
 - **Mass Assignment Defense**: In `RegisterRequest`, attempting to submit unauthorized fields (`role`, `is_active`, `workspace_id`) triggers an immediate HTTP 422 error.
@@ -54,7 +86,7 @@ Kestrel uses a shared-database, shared-schema multi-tenancy model isolated at th
 
 ---
 
-## 5. Secret Hygiene & Defense-in-Depth
+## 7. Secret Hygiene & Defense-in-Depth
 
 - **Pydantic `SecretStr`**: Sensitive settings (`postgres_password`, `jwt_secret_key`) use `SecretStr`, which masks output in logs, exceptions, and `repr()`.
 - **Secret Scanning Quality Gate**: Every commit and push requires automated regex and literal scans for database passwords, JWT secrets, and provider API key prefixes (`sk-`, `AIza`, `gsk_`).
@@ -63,13 +95,14 @@ Kestrel uses a shared-database, shared-schema multi-tenancy model isolated at th
 
 ---
 
-## 6. Known Security Gaps & Planned Roadmap
+## 8. Known Security Gaps & Planned Roadmap
 
 | Area | Current Status | Planned Mitigation | Milestone |
 |---|---|---|---|
-| **Rate Limiting** | Known gap; no rate limits on `/auth/login` or `/auth/register` | Slowapi / Redis sliding-window rate limiting on public auth endpoints | Milestone 5/6 |
-| **Refresh Tokens** | Stateless 15-minute access tokens only; no refresh tokens | Secure HTTP-only cookies with rotating refresh token hashes | Future Session Milestone |
-| **Session Revocation** | Immediate account deactivation via DB check | Token blacklist / versioning for instant single-session logout | Future Session Milestone |
-| **CORS** | Restrictive default | Configured explicitly when frontend origin is scaffolded | Milestone 8 |
-| **API Keys** | Not yet implemented | SHA-256 hashed ingestion keys with prefix display (`kst_live_`) | Milestone 5 |
-| **Audit Logs** | Schema planned | Automatic recording of security-critical actions in `audit_logs` | Audit Milestone |
+| **Rate Limiting** | Known gap; no rate limits on `/auth/login` or `/auth/register` | Slowapi / Redis sliding-window rate limiting on public auth endpoints | Milestone 13 |
+| **Refresh Tokens** | **Resolved** (Milestone 5) | HttpOnly rotating cookies with reuse detection (ADR-024, ADR-026) | Milestone 5 |
+| **Session Revocation** | **Resolved** (Milestone 5) | Family invalidation on logout and reuse detection | Milestone 5 |
+| **Audit Logs** | **Resolved** (Milestone 5) | Append-only `audit_logs` table with request-ID and defense-in-depth sanitization | Milestone 5 |
+| **CORS** | Restrictive default (same-origin) | Configured explicitly when frontend origin is scaffolded | Milestone 13/14 |
+| **API Keys** | Not yet implemented | SHA-256 hashed ingestion keys with prefix display (`kst_live_`) | Milestone 6 |
+| **Password Reset** | Not yet implemented | Time-limited signed reset tokens via email | Future Milestone |

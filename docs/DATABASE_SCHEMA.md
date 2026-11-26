@@ -56,7 +56,7 @@ erDiagram
 |---|---|---|---|
 | `workspaces` | Multi-tenant organizational units with budget & retention rules | UUID (`gen_random_uuid()`) | **Implemented (Migration 0001)** |
 | `users` | User credentials and role-based permissions | UUID (`gen_random_uuid()`) | **Implemented (Migration 0001)** |
-| `refresh_tokens` | DB-backed opaque refresh token hashes with rotation & reuse detection | UUID (`gen_random_uuid()`) | Planned (Milestone 5) |
+| `refresh_tokens` | DB-backed opaque refresh token hashes with rotation & reuse detection | UUID (`gen_random_uuid()`) | **Implemented (Migration 0002)** |
 | `api_keys` | Hashed ingestion credentials for external app telemetry | UUID (`gen_random_uuid()`) | Planned (Ingest Milestone) |
 | `provider_connections` | Encrypted upstream LLM provider API credentials | UUID (`gen_random_uuid()`) | Planned (Providers Milestone) |
 | `provider_health_checks` | Scheduled upstream provider latency and status history | BIGINT IDENTITY | Planned (Providers Milestone) |
@@ -65,7 +65,7 @@ erDiagram
 | `usage_hourly` | Hourly pre-aggregated token, cost, and request summaries | Composite PK | Planned (Analytics Milestone) |
 | `alert_rules` | Threshold conditions for latency, spend, and errors | UUID (`gen_random_uuid()`) | Planned (Alerts Milestone) |
 | `alerts` | Deduplicated firing and resolved incident lifecycle | UUID (`gen_random_uuid()`) | Planned (Alerts Milestone) |
-| `audit_logs` | Immutable audit trail for administrative operations | BIGINT IDENTITY | Planned (Audit Milestone) |
+| `audit_logs` | Immutable audit trail for administrative operations | UUID (`gen_random_uuid()`) | **Implemented (Migration 0002)** |
 
 ---
 
@@ -235,16 +235,42 @@ Alert incident state records and deduplication lifecycle.
 - **Status**: Planned
 
 ### 11. `audit_logs`
-Immutable administrative audit events.
-- `id`: `BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY`
-- `workspace_id`: `UUID NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT`
-- `actor_type`: `VARCHAR(16) NOT NULL CHECK (actor_type IN ('user', 'api_key', 'system'))`
-- `actor_user_id`: `UUID NULL REFERENCES users(id) ON DELETE SET NULL`
+Immutable administrative and security audit trail (ADR-025).
+- `id`: `UUID PRIMARY KEY DEFAULT gen_random_uuid()`
+- `workspace_id`: `UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE`
+- `actor_id`: `UUID NULL REFERENCES users(id) ON DELETE SET NULL`
+- `actor_type`: `VARCHAR(16) NOT NULL CHECK (actor_type IN ('user', 'system'))`
 - `action`: `VARCHAR(64) NOT NULL`
-- `target_type`: `VARCHAR(64) NULL`
-- `target_id`: `VARCHAR(64) NULL`
-- `request_id`: `VARCHAR(64) NULL`
-- `details`: `JSONB NOT NULL DEFAULT '{}'`
+- `resource_type`: `VARCHAR(32) NOT NULL`
+- `resource_id`: `UUID NULL`
+- `details`: `JSONB NULL`
+- `ip_address`: `VARCHAR(45) NULL`
+- `user_agent`: `VARCHAR(512) NULL`
+- `request_id`: `VARCHAR(36) NULL`
 - `created_at`: `TIMESTAMPTZ NOT NULL DEFAULT now()`
-- **Indexes**: `(workspace_id, created_at DESC)`
-- **Status**: Planned
+- **Indexes**:
+  - `ix_audit_logs_workspace_id` on `(workspace_id)`
+  - `ix_audit_logs_created_at` on `(created_at)`
+  - `ix_audit_logs_workspace_id_created_at` on `(workspace_id, created_at DESC)`
+  - `ix_audit_logs_workspace_id_action` on `(workspace_id, action)`
+- **Status**: Implemented (`0002`)
+
+### 12. `refresh_tokens`
+DB-backed opaque refresh token hashes with rotation and reuse detection (ADR-024).
+- `id`: `UUID PRIMARY KEY DEFAULT gen_random_uuid()`
+- `workspace_id`: `UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE`
+- `user_id`: `UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE`
+- `token_hash`: `VARCHAR(64) NOT NULL UNIQUE` (SHA-256 hex)
+- `family_id`: `UUID NOT NULL`
+- `issued_at`: `TIMESTAMPTZ NOT NULL DEFAULT now()`
+- `expires_at`: `TIMESTAMPTZ NOT NULL`
+- `revoked_at`: `TIMESTAMPTZ NULL`
+- `replaced_by_id`: `UUID NULL REFERENCES refresh_tokens(id) ON DELETE SET NULL`
+- **Constraints**: `CHECK (expires_at > issued_at)`
+- **Indexes**:
+  - `ix_refresh_tokens_workspace_id` on `(workspace_id)`
+  - `ix_refresh_tokens_user_id` on `(user_id)`
+  - `ix_refresh_tokens_family_id` on `(family_id)`
+  - `ix_refresh_tokens_token_hash` on `(token_hash)` (UNIQUE)
+  - `ix_refresh_tokens_expires_at` on `(expires_at)`
+- **Status**: Implemented (`0002`)

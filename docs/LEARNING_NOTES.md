@@ -5,6 +5,32 @@ Each entry follows: Concept | Definition | Why it matters | How we used it | Arc
 
 ---
 
+## Learning Notes — Milestone 5: Sessions, Refresh Token Rotation, Reuse Detection & Audit Trail
+
+- **Concepts Covered**: Cryptographic opaque refresh tokens, token family rotation, automated reuse detection, HttpOnly/SameSite cookie security, CSRF defense-in-depth, immutable PostgreSQL audit logging, and defense-in-depth key sanitization.
+- **Definitions & Architecture**:
+  - *Opaque Refresh Tokens (ADR-024)*: High-entropy random strings (`secrets.token_urlsafe(48)`) stored as deterministic SHA-256 hashes; plaintext tokens are never stored in the database.
+  - *Token Rotation & Family Trees*: Each refresh request issues a new token and marks the previous token revoked with a `replaced_by_id` pointer, preserving a traversal history under a shared `family_id`.
+  - *Reuse Detection*: If an already revoked token is presented, the server treats it as evidence of token theft, immediately revoking all active tokens in the entire family in an isolated committed transaction.
+  - *HttpOnly / SameSite=Strict Cookie (ADR-026)*: Refresh tokens are transmitted via browser cookies inaccessible to client-side JavaScript, mitigating XSS exfiltration.
+  - *CSRF Defense-in-Depth*: Requiring the custom client header `X-Kestrel-Client: web` on mutating cookie-authenticated endpoints (`/refresh`, `/logout`), which browsers block cross-origin without CORS approval.
+  - *Append-Only Audit Log (ADR-025)*: Immutable operational event stream (`audit_logs`) correlated with Structlog `request_id` and sanitized against sensitive credential keys.
+- **Terminology**: Token family, Rotation chain, Reuse detection, Replaced-by pointer, SHA-256 hash digest, HttpOnly, SameSite=Strict, CSRF header, Audit trail, Request ID correlation.
+- **Example**: `rotate_refresh_token()` looks up the presented token with `SELECT ... FOR UPDATE`; if `is_revoked`, it invalidates the entire family tree, commits, records an audit event, and raises `RefreshTokenReused`.
+- **Interview Questions & Answers**:
+  1. *Q: How does refresh token rotation with reuse detection protect users against token theft?*
+     A: If an attacker intercepts a refresh token, either the legitimate user or the attacker will use it first. As soon as the other party attempts to use the now-revoked token, reuse is detected, and the entire session family is instantly terminated for both.
+  2. *Q: Why store SHA-256 hashes of refresh tokens instead of raw values?*
+     A: If database backups or replicas are compromised, attackers obtain only one-way cryptographic hashes, preventing them from forging valid refresh cookie requests.
+  3. *Q: Why require a custom header like `X-Kestrel-Client` on cookie-authenticated refresh requests?*
+     A: Modern browsers enforce `SameSite=Strict`, but requiring a custom header guarantees that standard HTML form submissions or cross-origin fetch calls cannot trigger refresh operations, as cross-origin custom headers trigger mandatory CORS preflights.
+  4. *Q: Why must audit logging participate in the caller's transaction by default, but reuse detection commits immediately?*
+     A: Routine audit records should roll back if the business operation fails (to prevent recording actions that never took effect). However, security breach responses like reuse detection must persist immediately even if the HTTP request returns an error.
+- **Practical Mistakes**: Storing raw refresh tokens in plaintext; returning 401 on token reuse without revoking the sibling tokens; exposing detailed reuse error messages to the client; putting tokens or passwords in audit metadata details.
+- **Revision Summary**: Milestone 5 delivers an enterprise-grade session lifecycle with automatic token theft detection and an unalterable audit trail.
+
+---
+
 ## Learning Notes — Milestone 4: Authentication Core & Multi-Tenant Isolation
 
 - **Concepts Covered**: Memory-hard password hashing with Argon2id, timing attack equalization, JWT stateless tokens vs live database authorization, mass-assignment defense, and workspace-scoped repository isolation.

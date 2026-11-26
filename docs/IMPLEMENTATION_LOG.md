@@ -1,5 +1,48 @@
 # Implementation Log — Kestrel AI Control Center
 
+## 2026-11-26 — Milestone 5: Sessions, Refresh Token Rotation, Reuse Detection & Audit Trail
+
+### Objectives
+- Complete Milestone 4 review follow-ups: close test gaps in `test_auth_security.py` (alg none, wrong iss, wrong aud, missing exp) and `test_auth_api.py` (pw > 128 chars, identical 401s, spy test for dummy-hash verification, case-insensitive login email, deleted user 401, demoted admin 403, /users pagination, log safety test), refine ADR-020 title, add ADR-023, and update `docs/DATABASE_SCHEMA.md`.
+- Add session settings and code constants: `REFRESH_COOKIE_NAME = "kestrel_refresh"`, `REFRESH_COOKIE_PATH = "/api/v1/auth"`, `CSRF_HEADER_NAME = "X-Kestrel-Client"`, `CSRF_HEADER_VALUE = "web"`, `refresh_token_days` (1..30, default 7), `cookie_secure` with auto-resolution via `is_cookie_secure`.
+- Define `RefreshToken` model in `app/modules/auth/models.py` with foreign keys, family ID, expiration check constraints, and helper properties (`is_expired`, `is_revoked`, `is_active`).
+- Create `app/modules/audit/` module with `AuditLog` model with composite indexing on `(workspace_id, created_at DESC)` and `(workspace_id, action)`.
+- Register models in `app/core/models_registry.py` and autogenerate migration `0002_create_refresh_tokens_and_audit_logs.py`.
+- Implement `audit_service.record(...)` with structlog `request_id` extraction, transaction alignment, and defense-in-depth sanitization of sensitive keys.
+- Implement `AuditLogRepository` and `GET /api/v1/audit-logs` endpoint (AdminUser only).
+- Implement refresh token session service (`app/modules/auth/sessions.py`): `issue_refresh_token`, `rotate_refresh_token` with reuse detection revoking the entire token family, and idempotent `revoke_family_by_token`.
+- Wire audit events into registration (`auth.register`), authentication (`auth.login`), rotation (`auth.refresh`), reuse detection (`auth.refresh_reuse_detected`), and logout (`auth.logout`).
+- Add cookie management helper functions and update endpoints (`POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`, `POST /api/v1/auth/logout`) with `X-Kestrel-Client` CSRF protection and cookie clearance on errors.
+- Author comprehensive test suites (`test_sessions.py`, `test_audit.py`, `test_migrations.py`) reaching 87 automated tests running against real PostgreSQL with 100% pass rate.
+- Author documentation: `docs/ROADMAP.md` (Milestones 1–19), `docs/SECURITY.md` (Sessions, Audit Log, Frontend Contract, updated gaps), ADR-024..026, and schema docs.
+
+### Files Created & Modified
+- `backend/app/core/config.py`: Added session constants and settings fields (`refresh_token_days`, `cookie_secure`, `is_cookie_secure`).
+- `backend/app/modules/auth/models.py`: Added `RefreshToken` model with cascade delete and helper properties.
+- `backend/app/modules/audit/models.py`: Added `AuditLog` entity with composite indexing.
+- `backend/app/core/models_registry.py`: Centralized model discovery registry for Alembic.
+- `backend/migrations/versions/0002_create_refresh_tokens_and_audit_logs.py`: Migration creating `refresh_tokens` and `audit_logs` tables and indexes.
+- `backend/app/modules/auth/security.py`: Added `generate_refresh_token` and `hash_refresh_token`.
+- `backend/app/modules/audit/schemas.py`: Added `AuditLogRead` Pydantic model.
+- `backend/app/modules/audit/service.py`: Audit recording service with defense-in-depth key sanitization.
+- `backend/app/modules/audit/repository.py`: Tenant-scoped `AuditLogRepository`.
+- `backend/app/modules/audit/router.py`: `GET /api/v1/audit-logs` endpoint.
+- `backend/app/modules/auth/sessions.py`: Session management, rotation, reuse detection, and family revocation.
+- `backend/app/modules/auth/service.py`: Wired audit events into `register` and `authenticate`, removed internal commit from authenticate.
+- `backend/app/modules/auth/router.py`: Added refresh cookies, `/refresh`, `/logout`, and CSRF protection.
+- `backend/app/main.py`: Registered audit router and handlers for `InvalidRefreshToken` and `RefreshTokenReused`.
+- `backend/tests/test_sessions.py`: 10 integration tests for cookies, rotation, reuse detection, and logout.
+- `backend/tests/test_audit.py`: 7 integration tests for audit recording, defense-in-depth, RBAC, and tenancy isolation.
+- `backend/tests/test_migrations.py`: Added migration 0002 step-downgrade and re-upgrade tests.
+- `docs/ROADMAP.md`: Created complete 19-milestone project roadmap.
+- `docs/SECURITY.md`: Added Sessions, Audit Log, and Frontend Contract sections; updated gaps table.
+- `docs/ARCHITECTURE_DECISIONS.md`: Added ADR-024, ADR-025, and ADR-026.
+- `docs/DATABASE_SCHEMA.md`: Marked migration 0002 implemented.
+- `backend/README.md` & `README.md`: Updated layout, endpoints, and test counts.
+- `docs/PROJECT_STATUS.md`, `docs/PROJECT_CONTEXT.md`, `docs/LEARNING_NOTES.md`, `docs/TODO.md`: Updated tracking.
+
+---
+
 ## 2026-11-26 — Milestone 4: Authentication Core & Workspace-Scoped Multi-Tenancy
 
 ### Objectives

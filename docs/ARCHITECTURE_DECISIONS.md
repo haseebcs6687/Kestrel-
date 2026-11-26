@@ -174,3 +174,30 @@
   2. For nonexistent accounts during login, execute an Argon2id verification against a cached dummy hash (`get_dummy_hash()`) to equalize CPU execution time.
   3. On registration, return HTTP 409 Conflict (`{"detail": "Email already registered"}`). Disclosing email registration state is accepted for the MVP to prioritize immediate developer usability over delayed email confirmation flows.
 - **Consequences**: Prevents timing attacks and account harvesting on login; adds ~50ms computation on failed logins; trade-off on registration error disclosure is explicitly documented.
+
+---
+
+## ADR-024: DB-Backed Opaque Refresh Tokens with Rotation and Reuse Detection
+
+- **Status**: Accepted (2026-11-26)
+- **Context**: Short-lived access tokens (15 minutes) reduce the exposure window of stolen credentials but degrade usability if users are forced to re-enter passwords frequently. Long-lived stateless refresh tokens cannot be revoked individually and pose major replay risks if intercepted.
+- **Decision**: Implement database-backed opaque refresh tokens generated via `secrets.token_urlsafe(48)` (~288 bits entropy) and persisted strictly as deterministic SHA-256 hashes in `refresh_tokens(token_hash)`. Plaintext tokens are never stored. On every `/api/v1/auth/refresh` request, enforce single-use token rotation: revoke the current token, link it to the successor token via `replaced_by_id`, and issue a new token within the same `family_id`. If an already revoked token is presented, detect reuse immediately, invalidate all active tokens in the entire family in a committed transaction, record an `auth.refresh_reuse_detected` audit log, and return an opaque 401 error.
+- **Consequences**: Mitigates token theft and replay attacks automatically; compromised session families are terminated upon detection; requires one database update and insert per refresh call; guarantees zero exposure of plaintext session secrets from database dumps.
+
+---
+
+## ADR-025: Append-Only Audit Log in PostgreSQL with Request-ID Correlation and Defense-in-Depth Sanitization
+
+- **Status**: Accepted (2026-11-26)
+- **Context**: Enterprise compliance, tenant security, and incident forensics require an immutable history of sensitive operational and security events without risking credential leakage into log stores.
+- **Decision**: Maintain an append-only `audit_logs` table in PostgreSQL with composite indexing on `(workspace_id, created_at DESC)` and `(workspace_id, action)`. Correlate entries with the active Structlog `request_id` context variable. Enforce defense-in-depth sanitization in `audit_service.record()`: recursively validate `details` JSON payloads and raise an exception if forbidden credential keys or substrings (`password`, `token`, `secret`, `cookie`, `authorization`, `hash`) appear. Participate in the caller's transaction by default (calling `flush()` without `commit()`) so aborted business operations do not leave misleading audit trails, while security breach alarms commit immediately.
+- **Consequences**: Provides reliable, tenant-isolated audit logs; prevents accidental leakage of credentials into audit storage; ensures cross-layer traceability between HTTP server logs and database records.
+
+---
+
+## ADR-026: HttpOnly Cookie for Refresh Tokens with Custom Header Requirement for CSRF Defense-in-Depth
+
+- **Status**: Accepted (2026-11-26)
+- **Context**: Delivering refresh tokens in JSON bodies encourages frontend clients to store them in `localStorage` or `sessionStorage`, where they are vulnerable to exfiltration via Cross-Site Scripting (XSS). Delivering tokens via cookies eliminates XSS extraction but introduces Cross-Site Request Forgery (CSRF) concerns.
+- **Decision**: Deliver refresh tokens exclusively via HttpOnly cookies (`kestrel_refresh`) with `Path=/api/v1/auth`, `SameSite=Strict`, and `Secure` attributes. For defense-in-depth beyond browser `SameSite` enforcement, require mutating session endpoints (`/api/v1/auth/refresh` and `/api/v1/auth/logout`) to present the custom header `X-Kestrel-Client: web`.
+- **Consequences**: Frontend JavaScript cannot access or exfiltrate the refresh token; cross-site attackers cannot forge requests with custom headers without preflight CORS approval; browsers automatically handle cookie transport and expiration; client-side applications must supply the custom header during refresh and logout calls.

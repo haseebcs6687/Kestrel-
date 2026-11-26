@@ -20,15 +20,23 @@ backend/
       tenancy.py            # WorkspaceScopedRepository multi-tenant base class
     modules/
       __init__.py
+      audit/                # Operational and security audit logging
+        __init__.py
+        models.py           # AuditLog model with composite indexing
+        repository.py       # Workspace-scoped audit log querying
+        router.py           # /audit-logs administrative endpoint
+        schemas.py          # AuditLogRead Pydantic schema
+        service.py          # Audit recording service with defense-in-depth sanitization
       auth/                 # User model, authentication and role definitions
         __init__.py
         dependencies.py     # CurrentUser and AdminUser token dependencies
-        models.py           # User SQLAlchemy model and Role enum
+        models.py           # User and RefreshToken SQLAlchemy models and Role enum
         repository.py       # Scoped UserRepository and unscoped lookups
-        router.py           # /auth endpoints (register, login, me)
+        router.py           # /auth endpoints (register, login, refresh, logout, me)
         schemas.py          # Pydantic schemas for auth and profile
-        security.py         # Argon2id password hashing and JWT token handlers
+        security.py         # Argon2id password hashing and JWT/refresh token helpers
         service.py          # Registration, login authentication workflows
+        sessions.py         # Refresh token rotation, reuse detection, and revocation
         users_router.py     # /users administrative listing endpoint
       platform/             # Liveness (/health) and readiness (/health/ready) probes
         __init__.py
@@ -42,9 +50,11 @@ backend/
     script.py.mako
     versions/
       0001_create_workspaces_and_users.py
+      0002_create_refresh_tokens_and_audit_logs.py
   tests/
     __init__.py
     conftest.py             # TestClient, kestrel_test DB engine, and savepoint fixtures
+    test_audit.py           # Audit service, sanitization, and endpoint RBAC/isolation tests
     test_auth_api.py        # Registration, login, profile, and RBAC endpoint tests
     test_auth_security.py   # Argon2id and JWT unit tests
     test_config.py          # Configuration loading and secret masking tests
@@ -53,6 +63,7 @@ backend/
     test_migrations.py      # Alembic upgrade/downgrade/upgrade lifecycle and drift tests
     test_models_workspaces_users.py # Workspace and User ORM models & constraint tests
     test_request_id.py      # X-Request-ID propagation, validation, and generation tests
+    test_sessions.py        # Refresh token rotation, reuse detection, cookie, and logout tests
     test_tenancy.py         # WorkspaceScopedRepository isolation tests
   alembic.ini               # Alembic migration configuration
   pyproject.toml            # Project definition, runtime/dev dependencies, ruff, and pytest config
