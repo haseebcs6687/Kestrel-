@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from app.core.config import Settings, get_settings
 from app.core.logging import setup_logging
 from app.core.middleware import RequestIdAndLoggingMiddleware
+from app.modules.audit.router import router as audit_router
 from app.modules.auth.router import router as auth_router
 from app.modules.auth.service import (
     EmailAlreadyRegistered,
@@ -65,6 +66,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Versioned domain APIs (ADR-014)
     app.include_router(auth_router, prefix="/api/v1")
     app.include_router(users_router, prefix="/api/v1")
+    app.include_router(audit_router, prefix="/api/v1")
 
     return app
 

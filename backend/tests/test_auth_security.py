@@ -11,8 +11,10 @@ from app.modules.auth.security import (
     InvalidTokenError,
     create_access_token,
     decode_access_token,
+    generate_refresh_token,
     get_dummy_hash,
     hash_password,
+    hash_refresh_token,
     password_needs_rehash,
     verify_password,
 )
@@ -253,3 +255,26 @@ def test_decode_access_token_rejects_missing_exp() -> None:
 
     with pytest.raises(InvalidTokenError, match="Invalid token"):
         decode_access_token(token)
+
+
+def test_generate_refresh_token() -> None:
+    """Verify refresh token generation produces high-entropy distinct strings."""
+    t1 = generate_refresh_token()
+    t2 = generate_refresh_token()
+
+    assert isinstance(t1, str)
+    assert len(t1) >= 64
+    assert t1 != t2
+
+
+def test_hash_refresh_token() -> None:
+    """Verify refresh token hashing produces deterministic 64-character hex digests."""
+    raw = "test_raw_token_value_12345"
+    h1 = hash_refresh_token(raw)
+    h2 = hash_refresh_token(raw)
+    h3 = hash_refresh_token(raw + "_diff")
+
+    assert len(h1) == 64
+    assert all(c in "0123456789abcdef" for c in h1)
+    assert h1 == h2
+    assert h1 != h3

@@ -1,5 +1,6 @@
 """Cryptographic security utilities: Argon2id password hashing and JWT tokens."""
 
+import hashlib
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -133,3 +134,13 @@ def decode_access_token(token: str) -> uuid.UUID:
         return uuid.UUID(str(sub))
     except (ValueError, TypeError) as exc:
         raise InvalidTokenError("Token subject is not a valid UUID") from exc
+
+
+def generate_refresh_token() -> str:
+    """Generate a high-entropy cryptographically secure URL-safe refresh token string."""
+    return secrets.token_urlsafe(48)
+
+
+def hash_refresh_token(raw: str) -> str:
+    """Compute the deterministic SHA-256 hex digest of a raw refresh token."""
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
