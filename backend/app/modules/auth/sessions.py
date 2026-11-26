@@ -204,3 +204,29 @@ def revoke_family_by_token(
     )
     db.commit()
     return True
+
+
+def revoke_all_user_tokens(
+    db: Session,
+    user_id: uuid.UUID,
+) -> int:
+    """Revoke all active refresh tokens for the given user without committing (ADR-031).
+
+    Args:
+        db: Active database session.
+        user_id: UUID of user whose sessions are being revoked.
+
+    Returns:
+        int: Number of token records updated.
+    """
+    now = datetime.now(UTC)
+    stmt = (
+        update(RefreshToken)
+        .where(
+            RefreshToken.user_id == user_id,
+            RefreshToken.revoked_at.is_(None),
+        )
+        .values(revoked_at=now)
+    )
+    result = db.execute(stmt)
+    return int(result.rowcount)

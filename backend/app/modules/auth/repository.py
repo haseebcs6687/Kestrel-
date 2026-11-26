@@ -3,7 +3,7 @@
 import uuid
 from collections.abc import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.tenancy import WorkspaceScopedRepository
@@ -27,6 +27,24 @@ class UserRepository(WorkspaceScopedRepository):
             .offset(offset)
         )
         return self.session.scalars(stmt).all()
+
+    def get_for_update(self, user_id: uuid.UUID) -> User | None:
+        """Fetch a user by ID with an exclusive row lock within the workspace boundary."""
+        stmt = self.scope(select(User).where(User.id == user_id), User).with_for_update()
+        return self.session.scalar(stmt)
+
+    def count_active_admins(self) -> int:
+        """Count active admin users belonging to the scoped workspace."""
+        stmt = (
+            select(func.count())
+            .select_from(User)
+            .where(
+                User.workspace_id == self.workspace_id,
+                User.role == "admin",
+                User.is_active.is_(True),
+            )
+        )
+        return self.session.scalar(stmt) or 0
 
 
 # Unscoped Lookups (ADR-022 Exception)

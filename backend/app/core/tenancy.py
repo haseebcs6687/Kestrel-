@@ -3,8 +3,10 @@
 import uuid
 from typing import Any
 
-from sqlalchemy import Select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
+
+from app.modules.workspaces.models import Workspace
 
 
 class WorkspaceScopedRepository:
@@ -36,3 +38,17 @@ class WorkspaceScopedRepository:
             Select query scoped strictly to self.workspace_id.
         """
         return statement.where(model.workspace_id == self.workspace_id)
+
+
+def lock_workspace(db: Session, workspace_id: uuid.UUID) -> Workspace | None:
+    """Acquire an exclusive row-level lock on the specified workspace (ADR-030).
+
+    Args:
+        db: Active database session.
+        workspace_id: UUID of workspace row to lock with SELECT ... FOR UPDATE.
+
+    Returns:
+        Workspace | None: The locked workspace instance if found.
+    """
+    stmt = select(Workspace).where(Workspace.id == workspace_id).with_for_update()
+    return db.scalar(stmt)

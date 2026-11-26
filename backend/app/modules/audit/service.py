@@ -21,17 +21,18 @@ _FORBIDDEN_KEY_SUBSTRINGS = (
 )
 
 
-def _validate_details(details: dict[str, Any] | None) -> None:
-    """Recursively validate details dictionary against forbidden security-sensitive keys."""
-    if not details:
-        return
-    for key, value in details.items():
-        lowered_key = str(key).lower()
-        for forbidden in _FORBIDDEN_KEY_SUBSTRINGS:
-            if forbidden in lowered_key:
-                raise ValueError(f"Audit log details contain forbidden security key: {key}")
-        if isinstance(value, dict):
+def _validate_details(details: Any) -> None:
+    """Recursively validate details data structure against forbidden security-sensitive keys."""
+    if isinstance(details, dict):
+        for key, value in details.items():
+            lowered_key = str(key).lower()
+            for forbidden in _FORBIDDEN_KEY_SUBSTRINGS:
+                if forbidden in lowered_key:
+                    raise ValueError(f"Audit log details contain forbidden security key: {key}")
             _validate_details(value)
+    elif isinstance(details, (list, tuple, set)):
+        for item in details:
+            _validate_details(item)
 
 
 def record(
