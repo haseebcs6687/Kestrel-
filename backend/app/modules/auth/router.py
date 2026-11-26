@@ -1,11 +1,18 @@
-"""Authentication endpoints: registration, login token issuance, and user profile."""
+"""Authentication endpoints: registration, login, refresh rotation, and user profile."""
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
-from app.core.config import Settings, get_settings
+from app.core.config import (
+    CSRF_HEADER_NAME,
+    CSRF_HEADER_VALUE,
+    REFRESH_COOKIE_NAME,
+    REFRESH_COOKIE_PATH,
+    Settings,
+    get_settings,
+)
 from app.core.db import get_db
 from app.modules.auth.dependencies import CurrentUser
 from app.modules.auth.schemas import (
@@ -24,8 +31,37 @@ from app.modules.auth.service import (
     authenticate,
     register,
 )
+from app.modules.auth.sessions import (
+    issue_refresh_token,
+    revoke_family_by_token,
+    rotate_refresh_token,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def set_refresh_cookie(response: Response, raw_token: str, settings: Settings) -> None:
+    """Attach the HttpOnly refresh token cookie to the response."""
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=raw_token,
+        max_age=settings.refresh_token_days * 86400,
+        httponly=True,
+        secure=settings.is_cookie_secure,
+        samesite="strict",
+        path=REFRESH_COOKIE_PATH,
+    )
+
+
+def clear_refresh_cookie(response: Response, settings: Settings) -> None:
+    """Instruct the user agent to delete the refresh token cookie."""
+    response.delete_cookie(
+        key=REFRESH_COOKIE_NAME,
+        path=REFRESH_COOKIE_PATH,
+        httponly=True,
+        secure=settings.is_cookie_secure,
+        samesite="strict",
+    )
 
 
 @router.post(
@@ -36,6 +72,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 )
 def register_user(
     payload: RegisterRequest,
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> UserRead:
@@ -47,6 +84,8 @@ def register_user(
             password=payload.password,
             workspace_name=payload.workspace_name,
             settings=settings,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
         )
     except RegistrationDisabled as exc:
         raise HTTPException(
@@ -71,14 +110,28 @@ def register_user(
 def login_user(
     payload: LoginRequest,
     response: Response,
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> TokenResponse:
-    """Verify credentials and issue a short-lived bearer access token."""
+    """Verify credentials, issue access token, and attach refresh token cookie."""
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
 
     try:
-        user = authenticate(db=db, email=payload.email, password=payload.password)
+        user = authenticate(
+            db=db,
+            email=payload.email,
+            password=payload.password,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+        raw_refresh_token, _ = issue_refresh_token(
+            db=db,
+            user=user,
+            workspace_id=user.workspace_id,
+        )
+        db.commit()
     except InvalidCredentials as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -86,12 +139,90 @@ def login_user(
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
 
+    set_refresh_cookie(response, raw_refresh_token, settings)
     token, expires_in = create_access_token(user_id=user.id)
     return TokenResponse(
         access_token=token,
         token_type="bearer",  # noqa: S106
         expires_in=expires_in,
     )
+
+
+@router.post(
+    "/refresh",
+    response_model=TokenResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Rotate refresh token and issue new bearer access token",
+)
+def refresh_session(
+    response: Response,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    x_kestrel_client: Annotated[str | None, Header(alias=CSRF_HEADER_NAME)] = None,
+    refresh_token: Annotated[str | None, Cookie(alias=REFRESH_COOKIE_NAME)] = None,
+) -> TokenResponse:
+    """Rotate the presented refresh token and set a new cookie."""
+    if x_kestrel_client != CSRF_HEADER_VALUE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid CSRF client header",
+        )
+
+    if not refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing refresh token cookie",
+        )
+
+    access_token, new_raw, _ = rotate_refresh_token(
+        db,
+        raw_token=refresh_token,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    set_refresh_cookie(response, new_raw, settings)
+
+    return TokenResponse(
+        access_token=access_token,
+        token_type="bearer",  # noqa: S106
+        expires_in=settings.jwt_access_token_expire_minutes * 60,
+    )
+
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Revoke refresh token family and clear session cookie",
+)
+def logout_user(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    x_kestrel_client: Annotated[str | None, Header(alias=CSRF_HEADER_NAME)] = None,
+    refresh_token: Annotated[str | None, Cookie(alias=REFRESH_COOKIE_NAME)] = None,
+) -> Response:
+    """Idempotently invalidate refresh token family and delete refresh cookie."""
+    if x_kestrel_client != CSRF_HEADER_VALUE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid CSRF client header",
+        )
+
+    if refresh_token:
+        revoke_family_by_token(
+            db,
+            raw_token=refresh_token,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+
+    resp = Response(status_code=status.HTTP_204_NO_CONTENT)
+    clear_refresh_cookie(resp, settings)
+    return resp
 
 
 @router.get(

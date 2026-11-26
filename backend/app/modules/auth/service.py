@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
+from app.modules.audit import service as audit_service
 from app.modules.auth.models import Role, User
 from app.modules.auth.repository import get_user_by_email
 from app.modules.auth.security import (
@@ -49,6 +50,8 @@ def register(
     password: str,
     workspace_name: str,
     settings: Settings,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ) -> User:
     """Register a new user and initialize their administrative workspace.
 
@@ -58,6 +61,8 @@ def register(
         password: Plaintext password to be securely hashed via Argon2id.
         workspace_name: Human-readable name for the new organization workspace.
         settings: Application settings instance.
+        ip_address: Client IP address.
+        user_agent: Client user-agent string.
 
     Returns:
         Persisted User model instance with administrative privileges.
@@ -86,6 +91,19 @@ def register(
             role=Role.ADMIN.value,
         )
         db.add(user)
+        db.flush()
+        audit_service.record(
+            db,
+            workspace_id=workspace.id,
+            action="auth.register",
+            resource_type="user",
+            actor_id=user.id,
+            actor_type="user",
+            resource_id=user.id,
+            details={"workspace_slug": workspace.slug, "role": user.role},
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
         db.commit()
         db.refresh(user)
     except IntegrityError as exc:
@@ -100,13 +118,21 @@ def register(
     return user
 
 
-def authenticate(db: Session, email: str, password: str) -> User:
+def authenticate(
+    db: Session,
+    email: str,
+    password: str,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+) -> User:
     """Authenticate user credentials and update their last login timestamp.
 
     Args:
         db: Active database session.
         email: Raw email input.
         password: Raw password input.
+        ip_address: Client IP address.
+        user_agent: Client user-agent string.
 
     Returns:
         Authenticated User model instance.
@@ -143,8 +169,19 @@ def authenticate(db: Session, email: str, password: str) -> User:
         user.password_hash = hash_password(password)
 
     user.last_login_at = datetime.now(UTC)
-    db.commit()
-    db.refresh(user)
+    audit_service.record(
+        db,
+        workspace_id=user.workspace_id,
+        action="auth.login",
+        resource_type="user",
+        actor_id=user.id,
+        actor_type="user",
+        resource_id=user.id,
+        details={"email": user.email},
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+    db.flush()
 
     logger.info(
         "auth_login_success",

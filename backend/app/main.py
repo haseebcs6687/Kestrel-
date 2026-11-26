@@ -7,12 +7,14 @@ from app.core.config import Settings, get_settings
 from app.core.logging import setup_logging
 from app.core.middleware import RequestIdAndLoggingMiddleware
 from app.modules.audit.router import router as audit_router
+from app.modules.auth.router import clear_refresh_cookie
 from app.modules.auth.router import router as auth_router
 from app.modules.auth.service import (
     EmailAlreadyRegistered,
     InvalidCredentials,
     RegistrationDisabled,
 )
+from app.modules.auth.sessions import InvalidRefreshToken, RefreshTokenReused
 from app.modules.auth.users_router import router as users_router
 from app.modules.platform.router import router as platform_router
 
@@ -57,6 +59,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             content={"detail": "Invalid email or password"},
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    @app.exception_handler(InvalidRefreshToken)
+    def invalid_refresh_token_handler(request: Request, exc: InvalidRefreshToken) -> JSONResponse:
+        resp = JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"detail": "Invalid or expired refresh token"},
+        )
+        clear_refresh_cookie(resp, settings)
+        return resp
+
+    @app.exception_handler(RefreshTokenReused)
+    def refresh_token_reused_handler(request: Request, exc: RefreshTokenReused) -> JSONResponse:
+        resp = JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"detail": "Invalid or expired refresh token"},
+        )
+        clear_refresh_cookie(resp, settings)
+        return resp
 
     app.add_middleware(RequestIdAndLoggingMiddleware)
 
