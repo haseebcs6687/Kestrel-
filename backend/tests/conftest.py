@@ -1,7 +1,12 @@
 """Shared test fixtures and database configuration."""
 
+import os
+import secrets
 from collections.abc import Generator
 from pathlib import Path
+
+# Ephemeral secure JWT secret key for test execution session
+os.environ.setdefault("JWT_SECRET_KEY", secrets.token_urlsafe(48))
 
 import pytest
 from alembic import command
