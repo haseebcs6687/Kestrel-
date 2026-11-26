@@ -20,6 +20,7 @@ Kestrel AI Control Center is built according to a layered, defense-in-depth arch
 | **M3** | Database Schema & Identity Migrations | Alembic migration framework, `workspaces` and `users` models, and dedicated test databases. | **Complete** |
 | **M4** | Authentication Core & Multi-Tenancy | Argon2id hashing, 15-minute JWT tokens, `/register`, `/login`, `/me`, RBAC, and `WorkspaceScopedRepository`. | **Complete** |
 | **M5** | Sessions & Audit Logging | DB-backed opaque refresh tokens with rotation and reuse detection, HttpOnly cookies, and append-only audit trail. | **Complete** |
+| **M5b**| Audit Logs Schema Alignment | Corrective rebuild of `audit_logs` via migration 0003, 64-char request ID support, and constraint test coverage. | **Complete** |
 | **M6** | API Keys & Telemetry Ingestion | `api_keys` model with SHA-256 hashes, prefix display, and high-throughput `POST /api/v1/ingest/events` endpoint. | Pending |
 | **M7** | Thin Python Client SDK | Asynchronous and synchronous Python telemetry wrapper library with local queueing and batch flush. | Pending |
 | **M8** | Provider Connections & Probes | `provider_connections` table, Fernet credential encryption, automated provider health checks, and latency probes. | Pending |

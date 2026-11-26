@@ -43,17 +43,18 @@ All authenticated requests decode the user UUID from `sub` and query PostgreSQL 
 
 ---
 
-## 3. Operational & Security Audit Trail (ADR-025)
+## 3. Operational & Security Audit Trail (ADR-025, ADR-027)
 
-- **PostgreSQL Audit Log**: Immutable append-only operational history stored in `audit_logs` table with composite index `(workspace_id, created_at DESC)`.
+- **PostgreSQL Audit Log**: Immutable append-only operational history stored in `audit_logs` table with primary key `BIGINT GENERATED ALWAYS AS IDENTITY`, foreign key `ON DELETE RESTRICT` on `workspace_id` to guarantee audit trail permanence, `ON DELETE SET NULL` on `actor_user_id`, and composite index `(workspace_id, created_at DESC)`.
 - **Recorded Security Events**:
   - `auth.register`: User and organization account initialization.
   - `auth.login`: User authentication success.
   - `auth.refresh`: Session rotation and access token reissue.
   - `auth.refresh_reuse_detected`: Security alarm triggering token family invalidation.
   - `auth.logout`: Session family revocation and cookie cleanup.
-- **Request-ID Correlation**: Automatically binds the active `structlog` request UUID to audit rows for cross-tier log and trace correlation.
-- **Defense-in-Depth Sanitization**: Audit recording service validates all `details` payload dictionaries, throwing an exception if any sensitive security keys or substrings (`password`, `token`, `secret`, `cookie`, `authorization`, `hash`) are detected.
+- **Request-ID Correlation**: Automatically binds the active `structlog` request UUID to audit rows (`VARCHAR(64)` supporting full 64-character IDs) for cross-tier log and trace correlation.
+- **Omission of Unvalidated IP/User-Agent**: Client IP address and User-Agent headers are deliberately omitted from audit rows pending an explicit reverse-proxy trusted-header derivation design.
+- **Defense-in-Depth Sanitization**: Audit recording service validates all `details` payload dictionaries, throwing an exception if any sensitive security keys or substrings (`password`, `token`, `secret`, `cookie`, `authorization`, `hash`) are detected. Details default to `{}` when not provided.
 - **Transactional Consistency**: Standard audit events flush within the caller's database transaction, rolling back automatically if the business operation aborts. Security violations (e.g. reuse detection) execute in an explicit committed transaction to ensure immediate revocation.
 
 ---
@@ -64,7 +65,7 @@ Kestrel uses a shared-database, shared-schema multi-tenancy model isolated at th
 - **`WorkspaceScopedRepository`**: All tenant-aware repositories inherit from `app.core.tenancy.WorkspaceScopedRepository`.
 - **Automatic Scoping**: Query methods apply `scope(statement, Model)` which binds `Model.workspace_id == self.workspace_id`.
 - **Unscoped Exception**: Only initial email login (`get_user_by_email`) and token decoding (`get_user_by_id`) operate unscoped because the requesting workspace is not yet known.
-- **Foreign Key Invariant**: Relational models enforce `ON DELETE RESTRICT` on workspace associations for core accounts, with cascading session and audit cleanups.
+- **Foreign Key Invariant**: Relational models enforce `ON DELETE RESTRICT` on workspace associations for core accounts and audit logs, with cascading session cleanups.
 
 ---
 

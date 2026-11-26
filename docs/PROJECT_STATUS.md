@@ -10,6 +10,7 @@
 | **M3** | Database schema, SQLAlchemy models & Alembic migrations | **Complete** | Completed & verified (Tag: `m3-alembic-identity`) |
 | **M4** | Authentication core, Argon2id, JWT, RBAC & tenancy repo | **Complete** | Completed & verified (Tag: `m4-auth-core`) |
 | **M5** | Sessions (rotation & reuse detection), cookies & audit logs | **Complete** | Completed & verified (Tag: `m5-sessions-audit`) |
+| **M5b**| Corrective milestone: rebuild audit_logs to match schema design | **Complete** | Completed & verified (Tag: `m5b-schema-fix`) |
 | **M6** | API keys and telemetry ingestion endpoint (`POST /ingest/events`) | Pending | Next |
 | **M7** | Thin Python telemetry client wrapper SDK | Pending | Upcoming |
 | **M8** | Provider connections, health monitoring & latency probes | Pending | Upcoming |
@@ -27,7 +28,7 @@
 
 ## Current Implementation State
 
-- **Implemented**: Backend skeleton, `/health` (liveness), `/health/ready` (readiness with database probe), Pydantic Settings configuration, Structlog logging, Request-ID middleware, complete database schema design (`docs/DATABASE_SCHEMA.md` with 12 tables and ERD), Alembic migration framework (`0001_create_workspaces_and_users.py` and `0002_create_refresh_tokens_and_audit_logs.py`), SQLAlchemy 2.0 `workspaces`, `users`, `refresh_tokens`, and `audit_logs` models, Argon2id password hashing, JWT bearer token authentication, HttpOnly refresh token cookies with rotation and reuse detection, `/api/v1/auth/register`, `/api/v1/auth/login`, `/api/v1/auth/refresh`, `/api/v1/auth/logout`, `/api/v1/auth/me`, workspace-scoped repository pattern (`WorkspaceScopedRepository`), `/api/v1/users` role-based access control, and `/api/v1/audit-logs` administrative endpoint.
+- **Implemented**: Backend skeleton, `/health` (liveness), `/health/ready` (readiness with database probe), Pydantic Settings configuration, Structlog logging, Request-ID middleware, complete database schema design (`docs/DATABASE_SCHEMA.md` with 12 tables and ERD), Alembic migration framework (`0001_create_workspaces_and_users.py`, `0002_create_refresh_tokens_and_audit_logs.py`, and `0003_rebuild_audit_logs_to_match_schema_design.py`), SQLAlchemy 2.0 `workspaces`, `users`, `refresh_tokens`, and canonical `audit_logs` models (BIGINT Identity, RESTRICT on workspace, SET NULL on actor user, target_type/id, request_id(64), details jsonb default `{}`), Argon2id password hashing, JWT bearer token authentication, HttpOnly refresh token cookies with rotation and reuse detection, `/api/v1/auth/register`, `/api/v1/auth/login`, `/api/v1/auth/refresh`, `/api/v1/auth/logout`, `/api/v1/auth/me`, workspace-scoped repository pattern (`WorkspaceScopedRepository`), `/api/v1/users` role-based access control, and `/api/v1/audit-logs` administrative endpoint.
 - **Mocked**: None.
-- **Tested**: 87 automated unit and integration tests passing on real PostgreSQL (100% pass rate); complete Alembic migration lifecycle (`upgrade head` -> `downgrade 0001` -> `downgrade base` -> `upgrade head`) and schema drift checks verified.
+- **Tested**: 106 automated unit and integration tests passing on real PostgreSQL (100% pass rate); complete Alembic migration lifecycle (`upgrade head` -> `downgrade 0002` -> `downgrade base` -> `upgrade head`), abort-with-data safety guard, and schema drift checks verified.
 - **Deployed**: None.

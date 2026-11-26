@@ -5,6 +5,27 @@ Each entry follows: Concept | Definition | Why it matters | How we used it | Arc
 
 ---
 
+## Learning Notes — Milestone 5b: Audit Logs Schema Alignment, Applied Migration Immutability & Contract Testing
+
+- **Concepts Covered**: Applied migration immutability (ADR-016), forward-migration repair, end-to-end request-ID contract consistency, foreign key ON DELETE RESTRICT on audit history, and reproduction-first bug fixing.
+- **Definitions & Architecture**:
+  - *Applied Migration Immutability (ADR-016, ADR-027)*: Never edit or delete an already applied migration. Schema corrections must always be enacted as forward migrations (`0003`) to maintain linear consistency across distributed environments.
+  - *Data Loss Safeguards in Destructive Rebuilds*: Migration 0003 queries `SELECT count(*) FROM audit_logs` before dropping, aborting with `RuntimeError` if existing records are present to prevent unintentional data loss.
+  - *API vs DB Contract Consistency*: The HTTP request-ID middleware allowed 1-64 character IDs, but the initial schema used `VARCHAR(36)`, causing truncation. The column size must always equal or exceed the maximum allowed upstream length.
+  - *Audit History Permanence (`ON DELETE RESTRICT`)*: Tenant audit rows must outlive operational records and resist deletion if a tenant workspace is dropped, preserving forensic accountability.
+  - *Deferred IP & User-Agent Storage*: Storing client IPs and user-agents without trusted reverse-proxy headers (e.g. `X-Forwarded-For` CIDR validation) introduces spoofing and privacy liabilities; such storage must be deferred until proxy infrastructure is architected.
+- **Terminology**: Forward migration, Schema drift, Destructive migration guard, Constraint contract, Monotonic BIGINT identity, ON DELETE RESTRICT, Request ID truncation.
+- **Example**: Reproducing the bug before fixing: a test asserting `audit_row.request_id == "A"*32 + "_" + "B"*29 + "-1"` failed on `VARCHAR(36)` before Migration 0003 and passed immediately after.
+- **Interview Questions & Answers**:
+  1. *Q: Why must database migrations in shared or production repositories never be edited after being applied?*
+     A: Editing applied revisions alters migration checksums and histories, creating irreconcilable drift across staging, developer machines, and production instances that disrupts future migrations.
+  2. *Q: Why should an audit_logs table configure ON DELETE RESTRICT on tenant workspace foreign keys?*
+     A: Audit trails provide statutory and security compliance; configuring CASCADE would allow an attacker or accidental script deleting a tenant workspace to permanently erase the forensic record of their actions.
+- **Practical Mistakes**: Editing migration 0002 directly to fix schema discrepancies; truncating request IDs silently in service code instead of expanding the database column; assuming client IP headers are authentic without reverse-proxy validation.
+- **Revision Summary**: Milestone 5b establishes migration 0003, bringing audit_logs into complete alignment with the approved design while safeguarding migration immutability.
+
+---
+
 ## Learning Notes — Milestone 5: Sessions, Refresh Token Rotation, Reuse Detection & Audit Trail
 
 - **Concepts Covered**: Cryptographic opaque refresh tokens, token family rotation, automated reuse detection, HttpOnly/SameSite cookie security, CSRF defense-in-depth, immutable PostgreSQL audit logging, and defense-in-depth key sanitization.

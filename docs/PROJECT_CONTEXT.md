@@ -9,7 +9,8 @@
   - Milestone 3: Database schema design, Alembic migrations, `workspaces` and `users` models, and dedicated test databases (Tag: `m3-alembic-identity`).
   - Milestone 4: Authentication core, Argon2id password hashing, JWT bearer tokens, RBAC, and workspace-scoped repository isolation (Tag: `m4-auth-core`).
   - Milestone 5: Sessions and audit: DB-backed opaque refresh tokens with rotation and reuse detection, HttpOnly cookies, and append-only audit trail (Tag: `m5-sessions-audit`).
-- **Current Milestone**: Milestone 5 complete; preparing Milestone 6.
+  - Milestone 5b: Corrective rebuild of `audit_logs` via migration 0003, request-ID 64-character fix, model and repository updates, and full constraint test coverage (Tag: `m5b-schema-fix`).
+- **Current Milestone**: Milestone 5b complete; preparing Milestone 6.
 - **Known Bugs**: None.
 - **Next Action**: Milestone 6 (API keys & Ingestion API `POST /api/v1/ingest/events`).
 
@@ -19,7 +20,7 @@
 - **Pre-Push Quality Gate**: Before pushing to `main`, four automated checks must pass:
   1. `uv run ruff check .`
   2. `uv run ruff format --check .`
-  3. `uv run pytest -v` (against real PostgreSQL container, 87 tests passing)
+  3. `uv run pytest -v` (against real PostgreSQL container, 106 tests passing)
   4. `uv run alembic check` (zero drift)
   5. Secret audit (`git grep -F` for real database password, JWT secrets, and regex for key patterns `sk-`, `AIza`, `gsk_`).
 

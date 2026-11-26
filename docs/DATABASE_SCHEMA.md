@@ -65,7 +65,7 @@ erDiagram
 | `usage_hourly` | Hourly pre-aggregated token, cost, and request summaries | Composite PK | Planned (Analytics Milestone) |
 | `alert_rules` | Threshold conditions for latency, spend, and errors | UUID (`gen_random_uuid()`) | Planned (Alerts Milestone) |
 | `alerts` | Deduplicated firing and resolved incident lifecycle | UUID (`gen_random_uuid()`) | Planned (Alerts Milestone) |
-| `audit_logs` | Immutable audit trail for administrative operations | UUID (`gen_random_uuid()`) | **Implemented (Migration 0002)** |
+| `audit_logs` | Immutable audit trail for administrative operations | BIGINT IDENTITY | **Implemented (Migration 0003)** |
 
 ---
 
@@ -235,25 +235,22 @@ Alert incident state records and deduplication lifecycle.
 - **Status**: Planned
 
 ### 11. `audit_logs`
-Immutable administrative and security audit trail (ADR-025).
-- `id`: `UUID PRIMARY KEY DEFAULT gen_random_uuid()`
-- `workspace_id`: `UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE`
-- `actor_id`: `UUID NULL REFERENCES users(id) ON DELETE SET NULL`
-- `actor_type`: `VARCHAR(16) NOT NULL CHECK (actor_type IN ('user', 'system'))`
+Immutable administrative and security audit trail (ADR-025, ADR-027).
+- `id`: `BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY`
+- `workspace_id`: `UUID NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT`
+- `actor_type`: `VARCHAR(16) NOT NULL CHECK (actor_type IN ('user', 'api_key', 'system'))`
+- `actor_user_id`: `UUID NULL REFERENCES users(id) ON DELETE SET NULL`
 - `action`: `VARCHAR(64) NOT NULL`
-- `resource_type`: `VARCHAR(32) NOT NULL`
-- `resource_id`: `UUID NULL`
-- `details`: `JSONB NULL`
-- `ip_address`: `VARCHAR(45) NULL`
-- `user_agent`: `VARCHAR(512) NULL`
-- `request_id`: `VARCHAR(36) NULL`
+- `target_type`: `VARCHAR(64) NULL`
+- `target_id`: `VARCHAR(64) NULL`
+- `request_id`: `VARCHAR(64) NULL`
+- `details`: `JSONB NOT NULL DEFAULT '{}'::jsonb`
 - `created_at`: `TIMESTAMPTZ NOT NULL DEFAULT now()`
 - **Indexes**:
-  - `ix_audit_logs_workspace_id` on `(workspace_id)`
-  - `ix_audit_logs_created_at` on `(created_at)`
   - `ix_audit_logs_workspace_id_created_at` on `(workspace_id, created_at DESC)`
   - `ix_audit_logs_workspace_id_action` on `(workspace_id, action)`
-- **Status**: Implemented (`0002`)
+- **Note on Client IP & User Agent**: Omitted in Migration 0003 (ADR-027). IP address and User-Agent are not stored until a trusted-proxy architecture exists.
+- **Status**: Implemented (`0003`, rebuilt from `0002`)
 
 ### 12. `refresh_tokens`
 DB-backed opaque refresh token hashes with rotation and reuse detection (ADR-024).
@@ -273,4 +270,8 @@ DB-backed opaque refresh token hashes with rotation and reuse detection (ADR-024
   - `ix_refresh_tokens_family_id` on `(family_id)`
   - `ix_refresh_tokens_token_hash` on `(token_hash)` (UNIQUE)
   - `ix_refresh_tokens_expires_at` on `(expires_at)`
+- **Accepted Deviations from Original Design**:
+  - `token_hash`: Defined as `VARCHAR(64)` with a unique index (`ix_refresh_tokens_token_hash`).
+  - `workspace_id`: Foreign key configured with `ON DELETE CASCADE` (refresh tokens are ephemeral session artifacts that cascade when a workspace is deleted).
+  - Additional indexes: `ix_refresh_tokens_expires_at` and `ix_refresh_tokens_workspace_id` for efficient session cleanup and tenant queries.
 - **Status**: Implemented (`0002`)

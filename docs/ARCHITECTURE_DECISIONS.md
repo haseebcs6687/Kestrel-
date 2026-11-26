@@ -201,3 +201,25 @@
 - **Context**: Delivering refresh tokens in JSON bodies encourages frontend clients to store them in `localStorage` or `sessionStorage`, where they are vulnerable to exfiltration via Cross-Site Scripting (XSS). Delivering tokens via cookies eliminates XSS extraction but introduces Cross-Site Request Forgery (CSRF) concerns.
 - **Decision**: Deliver refresh tokens exclusively via HttpOnly cookies (`kestrel_refresh`) with `Path=/api/v1/auth`, `SameSite=Strict`, and `Secure` attributes. For defense-in-depth beyond browser `SameSite` enforcement, require mutating session endpoints (`/api/v1/auth/refresh` and `/api/v1/auth/logout`) to present the custom header `X-Kestrel-Client: web`.
 - **Consequences**: Frontend JavaScript cannot access or exfiltrate the refresh token; cross-site attackers cannot forge requests with custom headers without preflight CORS approval; browsers automatically handle cookie transport and expiration; client-side applications must supply the custom header during refresh and logout calls.
+
+---
+
+## ADR-027: Corrective migration 0003 rebuilds audit_logs: applied migrations are never edited; IP address and user agent are not stored until a trusted-proxy design exists
+
+- **Status**: Accepted (2026-11-26)
+- **Context**: Milestone 5 applied migration `0002` with an initial `audit_logs` table that drifted from the approved design in `docs/DATABASE_SCHEMA.md`:
+  1. It used a random UUID primary key instead of `BIGINT GENERATED ALWAYS AS IDENTITY`.
+  2. It configured `workspace_id` foreign key with `ON DELETE CASCADE` instead of `ON DELETE RESTRICT`.
+  3. It defined `request_id` as `VARCHAR(36)` which truncated valid 64-character request IDs permitted by the HTTP request ID middleware (`^[A-Za-z0-9_-]{1,64}$`).
+  4. It stored `ip_address` and `user_agent` directly from unvalidated client headers without a trusted-proxy network architecture or reverse-proxy CIDR configuration.
+  5. It deviated from canonical column names (`actor_id` vs `actor_user_id`, `resource_type` vs `target_type`, `resource_id` vs `target_id`).
+- **Decision**:
+  1. In strict compliance with ADR-016 (applied migrations are immutable), do NOT modify or delete applied migrations `0001` or `0002`.
+  2. Implement migration `0003` (`0003_rebuild_audit_logs_to_match_schema_design.py`) to drop and rebuild `audit_logs` matching the canonical design: `BIGINT GENERATED ALWAYS AS IDENTITY` primary key, `ON DELETE RESTRICT` on `workspace_id`, `ON DELETE SET NULL` on `actor_user_id`, `VARCHAR(64)` for `request_id`, non-null `details` with default `'{}'::jsonb`, and composite indexes on `(workspace_id, created_at DESC)` and `(workspace_id, action)`.
+  3. Include a data-loss guard in `upgrade()` that checks `SELECT count(*) FROM audit_logs` and aborts with `RuntimeError` if existing records exist.
+  4. Omit `ip_address` and `user_agent` storage from the audit model, service, and database until a hardened trusted-proxy derivation design is established.
+- **Consequences**:
+  - Full alignment between SQLAlchemy models, migration chain, and `docs/DATABASE_SCHEMA.md`.
+  - Up to 64-character request IDs are persisted without truncation.
+  - Audit history is permanently protected against cascade deletion when tenant workspaces are removed.
+  - Zero risk of spoofed IP address or user-agent data poisoning the audit trail.

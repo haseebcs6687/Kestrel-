@@ -1,5 +1,41 @@
 # Implementation Log — Kestrel AI Control Center
 
+## 2026-11-26 — Milestone 5b: Corrective Schema Fix & Audit Logs Rebuild (Migration 0003)
+
+### Objectives
+- Reproduce the `request_id` truncation bug first: write failing tests proving that valid 64-character and 37-character `X-Request-ID` headers are truncated by the database and service.
+- Implement migration `0003_rebuild_audit_logs_to_match_schema_design.py` hand-crafted with Alembic `op.*` operations:
+  - Add data loss safeguard aborting with `RuntimeError` if existing records exist.
+  - Drop 0002 `audit_logs` table and indexes.
+  - Recreate canonical `audit_logs`: `BIGINT GENERATED ALWAYS AS IDENTITY` primary key, `ON DELETE RESTRICT` on `workspace_id`, `ON DELETE SET NULL` on `actor_user_id`, `actor_type IN ('user', 'api_key', 'system')`, `request_id VARCHAR(64)`, `details JSONB NOT NULL DEFAULT '{}'::jsonb`, and composite indexes on `(workspace_id, created_at DESC)` and `(workspace_id, action)`.
+  - Downgrade recreates exact 0002 shape.
+- Update `AuditLog` SQLAlchemy model, `audit_service.record(...)`, `AuditLogRead` schema, repository, and auth caller modules (`service.py`, `sessions.py`, `router.py`). Remove all code attempting to store `ip_address` or `user_agent` until a trusted reverse-proxy design exists.
+- Add comprehensive automated test coverage on real PostgreSQL:
+  - Verify Part 1 request_id tests now pass.
+  - Verify `audit_logs` constraints: BIGINT identity increments, `actor_type` check constraint, `details` NOT NULL and default, FK `RESTRICT` on workspace delete, FK `SET NULL` on user delete, inspector schema validation.
+  - Verify `refresh_tokens` constraints: unique `token_hash`, `expires_at > issued_at`, cascade on user delete, `replaced_by_id` SET NULL, cookie attributes and Secure flag resolution, raw token absence in DB, garbage cookie 401, inactive user family revocation, multi-session logout isolation, log safety.
+  - Verify migration 0003 lifecycle: upgrade head, step-downgrade to 0002, abort upgrade if rows exist, downgrade to base, re-upgrade to head.
+- Documentation updates: ADR-027, `docs/DATABASE_SCHEMA.md` with accepted deviations for refresh_tokens, `docs/SECURITY.md`, `docs/LEARNING_NOTES.md` (< 25 lines with 2 interview Q&As), roadmap, status, context, and log.
+
+### Files Created & Modified
+- `backend/migrations/versions/0003_rebuild_audit_logs_to_match_schema_design.py`: Hand-crafted migration rebuilding `audit_logs` with data-loss abort guard.
+- `backend/app/modules/audit/models.py`: Updated `AuditLog` model to match canonical schema.
+- `backend/app/modules/audit/schemas.py`: Updated `AuditLogRead` schema.
+- `backend/app/modules/audit/service.py`: Updated `record(...)` signature, sanitization, and request_id handling.
+- `backend/app/modules/auth/service.py`: Updated audit event recording parameters; removed `ip_address` and `user_agent`.
+- `backend/app/modules/auth/sessions.py`: Updated audit recording, family revocation for inactive users.
+- `backend/app/modules/auth/router.py`: Removed passing `ip_address` and `user_agent` to auth services.
+- `backend/tests/test_audit.py`: Added 64-char/37-char reproduction tests and 6 constraint/inspector tests.
+- `backend/tests/test_sessions.py`: Added 10 constraint, cookie attribute, multi-session, and log safety tests.
+- `backend/tests/test_migrations.py`: Added migration 0003 abort-with-rows, downgrade, and re-upgrade test.
+- `docs/ARCHITECTURE_DECISIONS.md`: Added ADR-027.
+- `docs/DATABASE_SCHEMA.md`: Updated `audit_logs` catalog and definition; added accepted deviations note for `refresh_tokens`.
+- `docs/SECURITY.md`: Updated Audit Log and Multi-Tenant Isolation sections.
+- `docs/LEARNING_NOTES.md`: Added Milestone 5b notes with 2 interview Q&As.
+- `docs/PROJECT_STATUS.md`, `docs/PROJECT_CONTEXT.md`, `docs/ROADMAP.md`, `docs/TODO.md`: Updated project tracking.
+
+---
+
 ## 2026-11-26 — Milestone 5: Sessions, Refresh Token Rotation, Reuse Detection & Audit Trail
 
 ### Objectives
