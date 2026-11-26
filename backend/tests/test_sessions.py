@@ -611,3 +611,35 @@ def test_session_log_safety_never_leaks_token_or_hash(
     all_logs = caplog.text
     assert raw_token not in all_logs
     assert tok_hash not in all_logs
+
+
+def test_revoke_all_user_tokens(db_session: Session) -> None:
+    """Verify revoke_all_user_tokens revokes only target user's tokens and leaves others intact."""
+    from app.modules.auth.sessions import issue_refresh_token, revoke_all_user_tokens
+
+    ws1, u1 = _create_user(db_session, "user1_revoke@example.com")
+    ws2, u2 = _create_user(db_session, "user2_revoke@example.com")
+
+    # Issue 2 tokens for u1 and 2 tokens for u2
+    issue_refresh_token(db_session, user=u1, workspace_id=ws1.id)
+    issue_refresh_token(db_session, user=u1, workspace_id=ws1.id)
+    issue_refresh_token(db_session, user=u2, workspace_id=ws2.id)
+    issue_refresh_token(db_session, user=u2, workspace_id=ws2.id)
+    db_session.flush()
+
+    count = revoke_all_user_tokens(db_session, u1.id)
+    assert count == 2
+    db_session.flush()
+
+    # Verify u1 tokens are revoked with replaced_by_id None
+    u1_tokens = db_session.scalars(select(RefreshToken).where(RefreshToken.user_id == u1.id)).all()
+    assert len(u1_tokens) == 2
+    for t in u1_tokens:
+        assert t.revoked_at is not None
+        assert t.replaced_by_id is None
+
+    # Verify u2 tokens remain active
+    u2_tokens = db_session.scalars(select(RefreshToken).where(RefreshToken.user_id == u2.id)).all()
+    assert len(u2_tokens) == 2
+    for t in u2_tokens:
+        assert t.revoked_at is None

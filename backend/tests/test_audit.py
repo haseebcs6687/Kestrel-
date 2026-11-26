@@ -94,7 +94,9 @@ def test_audit_record_forbidden_keys(db_session: Session) -> None:
     forbidden_payloads = [
         {"user_password": "plain_password"},
         {"nested": {"auth_token": "token_string"}},
-        {"secret_key": "jwt_secret"},
+        {"level1": {"level2": {"deep_secret": "value"}}},
+        {"list_payload": [{"item_cookie": "cookie_data"}]},
+        {"nested_list": {"items": [{"inner_hash": "hash_val"}]}},
         {"session_cookie": "cookie_data"},
         {"password_hash": "argon_hash"},
         {"authorization_header": "Bearer xyz"},
@@ -109,6 +111,27 @@ def test_audit_record_forbidden_keys(db_session: Session) -> None:
                 target_type="test",
                 details=payload,
             )
+
+
+def test_audit_record_allowed_keys(db_session: Session) -> None:
+    """Verify allowed keys like changes, role, from, to, is_active, sessions_revoked pass."""
+    workspace, _ = _create_workspace_and_user(db_session, email="allowed_keys@example.com")
+    allowed_details = {
+        "changes": {
+            "role": {"from": "viewer", "to": "admin"},
+            "is_active": {"from": True, "to": False},
+        },
+        "sessions_revoked": 3,
+    }
+    entry = audit_service.record(
+        db_session,
+        workspace_id=workspace.id,
+        action="test.allowed",
+        target_type="test",
+        details=allowed_details,
+    )
+    assert entry.id is not None
+    assert entry.details == allowed_details
 
 
 def test_audit_participates_in_transaction_rollback(db_session: Session) -> None:
