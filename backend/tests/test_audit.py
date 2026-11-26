@@ -285,3 +285,43 @@ def test_audit_log_pagination(auth_client: TestClient, db_session: Session) -> N
     ids_p1 = {item["id"] for item in items_p1}
     ids_p2 = {item["id"] for item in items_p2}
     assert ids_p1.isdisjoint(ids_p2)
+
+
+def test_register_with_64_char_request_id(auth_client: TestClient, db_session: Session) -> None:
+    """Verify registration with 64-character valid X-Request-ID stores the full ID."""
+    req_id_64 = "A" * 32 + "_" + "B" * 29 + "-1"
+    assert len(req_id_64) == 64
+    payload = {
+        "email": "req64@example.com",
+        "password": "SuperSecretPassword123!",
+        "workspace_name": "Req64 Org",
+    }
+    resp = auth_client.post(
+        "/api/v1/auth/register",
+        json=payload,
+        headers={"X-Request-ID": req_id_64},
+    )
+    assert resp.status_code == 201
+    audit_row = db_session.scalar(select(AuditLog).where(AuditLog.action == "auth.register"))
+    assert audit_row is not None
+    assert audit_row.request_id == req_id_64
+
+
+def test_login_with_37_char_request_id(auth_client: TestClient, db_session: Session) -> None:
+    """Verify login with 37-character valid X-Request-ID stores the full ID."""
+    _create_workspace_and_user(db_session, email="req37@example.com")
+    req_id_37 = "X" * 36 + "1"
+    assert len(req_id_37) == 37
+    payload = {
+        "email": "req37@example.com",
+        "password": "SuperSecretPassword123!",
+    }
+    resp = auth_client.post(
+        "/api/v1/auth/login",
+        json=payload,
+        headers={"X-Request-ID": req_id_37},
+    )
+    assert resp.status_code == 200
+    audit_row = db_session.scalar(select(AuditLog).where(AuditLog.action == "auth.login"))
+    assert audit_row is not None
+    assert audit_row.request_id == req_id_37
