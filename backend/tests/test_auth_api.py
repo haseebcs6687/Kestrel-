@@ -102,6 +102,17 @@ def test_register_validation_constraints(auth_client: TestClient) -> None:
     )
     assert resp.status_code == 422
 
+    # 4. Long password (>128 chars)
+    resp = auth_client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "valid@test.com",
+            "password": "A" * 129,
+            "workspace_name": "Valid Org",
+        },
+    )
+    assert resp.status_code == 422
+
 
 def test_register_mass_assignment_protection(auth_client: TestClient) -> None:
     """Verify extra attributes like role or is_active are rejected with 422."""
@@ -393,3 +404,233 @@ def test_list_users_cross_workspace_isolation(auth_client: TestClient, db_sessio
     users = resp.json()
     assert len(users) == 1
     assert users[0]["email"] == "org1_admin@test.com"
+
+
+def test_login_wrong_password_and_unknown_email_identical_responses(
+    auth_client: TestClient,
+) -> None:
+    """Verify wrong password and unknown email return identical 401 status and body."""
+    auth_client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "registered@test.com",
+            "password": "ValidPassword123!",
+            "workspace_name": "Id Org",
+        },
+    )
+
+    resp_wrong_pw = auth_client.post(
+        "/api/v1/auth/login",
+        json={"email": "registered@test.com", "password": "WrongPassword123!"},
+    )
+    resp_unknown_email = auth_client.post(
+        "/api/v1/auth/login",
+        json={"email": "nonexistent@test.com", "password": "AnyPassword123!"},
+    )
+
+    assert resp_wrong_pw.status_code == 401
+    assert resp_unknown_email.status_code == 401
+    assert resp_wrong_pw.headers.get("WWW-Authenticate") == "Bearer"
+    assert resp_unknown_email.headers.get("WWW-Authenticate") == "Bearer"
+    assert (
+        resp_wrong_pw.json() == resp_unknown_email.json() == {"detail": "Invalid email or password"}
+    )
+
+
+def test_login_spy_verify_password_called_for_unknown_email(
+    auth_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify timing equalization: verify_password is still called for an unknown email."""
+    from app.modules.auth import service as auth_service
+
+    calls = []
+    original_verify = auth_service.verify_password
+
+    def spy_verify(plain: str, hashed: str) -> bool:
+        calls.append((plain, hashed))
+        return original_verify(plain, hashed)
+
+    monkeypatch.setattr(auth_service, "verify_password", spy_verify)
+
+    resp = auth_client.post(
+        "/api/v1/auth/login",
+        json={"email": "nobody@test.com", "password": "Password123456!"},
+    )
+    assert resp.status_code == 401
+    assert len(calls) == 1
+    assert calls[0][0] == "Password123456!"
+    assert calls[0][1].startswith("$argon2id$")
+
+
+def test_login_email_lookup_is_case_insensitive(auth_client: TestClient) -> None:
+    """Verify email login handles uppercase input correctly via normalization."""
+    auth_client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "case.sensitive@test.com",
+            "password": "Password123456!",
+            "workspace_name": "Case Org",
+        },
+    )
+
+    resp = auth_client.post(
+        "/api/v1/auth/login",
+        json={"email": "CASE.SENSITIVE@TEST.COM", "password": "Password123456!"},
+    )
+    assert resp.status_code == 200
+    assert "access_token" in resp.json()
+
+
+def test_get_me_token_user_deleted_from_db_returns_401(
+    auth_client: TestClient, db_session: Session
+) -> None:
+    """Verify /me returns 401 if the user was deleted from the database after token issuance."""
+    auth_client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "to_be_deleted@test.com",
+            "password": "Password123456!",
+            "workspace_name": "Delete Org",
+        },
+    )
+    login_resp = auth_client.post(
+        "/api/v1/auth/login",
+        json={"email": "to_be_deleted@test.com", "password": "Password123456!"},
+    )
+    token = login_resp.json()["access_token"]
+
+    user = db_session.query(User).filter_by(email="to_be_deleted@test.com").one()
+    db_session.delete(user)
+    db_session.flush()
+
+    resp = auth_client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == "Not authenticated"
+
+
+def test_list_users_demoted_admin_takes_effect_immediately(
+    auth_client: TestClient, db_session: Session
+) -> None:
+    """Verify demoting an admin to viewer takes effect on the next request with the same token."""
+    auth_client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "demote_admin@test.com",
+            "password": "Password123456!",
+            "workspace_name": "Demote Org",
+        },
+    )
+    login_resp = auth_client.post(
+        "/api/v1/auth/login",
+        json={"email": "demote_admin@test.com", "password": "Password123456!"},
+    )
+    token = login_resp.json()["access_token"]
+
+    # Initial call as admin succeeds
+    resp1 = auth_client.get(
+        "/api/v1/users",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp1.status_code == 200
+
+    # Demote in database directly
+    admin = db_session.query(User).filter_by(email="demote_admin@test.com").one()
+    admin.role = Role.VIEWER.value
+    db_session.flush()
+
+    # Immediate next request fails with 403
+    resp2 = auth_client.get(
+        "/api/v1/users",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp2.status_code == 403
+    assert resp2.json()["detail"] == "Insufficient permissions"
+
+
+def test_list_users_pagination_limit_and_offset(
+    auth_client: TestClient, db_session: Session
+) -> None:
+    """Verify limit/offset pagination on /api/v1/users."""
+    auth_client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "page_admin@test.com",
+            "password": "Password123456!",
+            "workspace_name": "Page Org",
+        },
+    )
+    login_resp = auth_client.post(
+        "/api/v1/auth/login",
+        json={"email": "page_admin@test.com", "password": "Password123456!"},
+    )
+    token = login_resp.json()["access_token"]
+    admin = db_session.query(User).filter_by(email="page_admin@test.com").one()
+
+    # Add 2 more users
+    for i in range(2):
+        u = User(
+            workspace_id=admin.workspace_id,
+            email=f"page_user_{i}@test.com",
+            password_hash=hash_password("Password123456!"),
+            role=Role.VIEWER.value,
+        )
+        db_session.add(u)
+    db_session.flush()
+
+    # Page 1: limit 2, offset 0 -> 2 users
+    resp_p1 = auth_client.get(
+        "/api/v1/users?limit=2&offset=0",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp_p1.status_code == 200
+    data_p1 = resp_p1.json()
+    assert len(data_p1) == 2
+
+    # Page 2: limit 2, offset 2 -> 1 user
+    resp_p2 = auth_client.get(
+        "/api/v1/users?limit=2&offset=2",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp_p2.status_code == 200
+    data_p2 = resp_p2.json()
+    assert len(data_p2) == 1
+    assert data_p2[0]["id"] not in [u["id"] for u in data_p1]
+
+
+def test_log_safety_never_leaks_password_token_or_hash(
+    auth_client: TestClient, caplog: pytest.LogCaptureFixture, db_session: Session
+) -> None:
+    """Verify log output during register + login never contains password, token, or hash."""
+    import logging
+
+    caplog.set_level(logging.DEBUG)
+    known_password = "SuperSecretPlainTextPassword123!"
+
+    reg_resp = auth_client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "safe_log@test.com",
+            "password": known_password,
+            "workspace_name": "Log Safe Org",
+        },
+    )
+    assert reg_resp.status_code == 201
+
+    login_resp = auth_client.post(
+        "/api/v1/auth/login",
+        json={"email": "safe_log@test.com", "password": known_password},
+    )
+    assert login_resp.status_code == 200
+    raw_token = login_resp.json()["access_token"]
+
+    user = db_session.query(User).filter_by(email="safe_log@test.com").one()
+    pw_hash = user.password_hash
+
+    # Assert captured log text is strictly clean
+    all_logs = caplog.text
+    assert known_password not in all_logs
+    assert raw_token not in all_logs
+    assert pw_hash not in all_logs

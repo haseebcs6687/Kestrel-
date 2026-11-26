@@ -134,7 +134,7 @@
 
 ---
 
-## ADR-020: Hardcoded JWT Security Constants vs Environment Configuration
+## ADR-020: JWT access tokens (HS256, 15 minutes, minimal claims; algorithm, issuer and audience are code constants)
 
 - **Status**: Accepted (2026-11-26)
 - **Context**: JWT implementations can be vulnerable to algorithm confusion attacks (e.g., accepting `none` or switching symmetric/asymmetric algorithms) or signature forgery if issuers, audiences, and algorithms are loosely configured or dynamically parsed from unverified token headers.
@@ -142,7 +142,7 @@
   - `JWT_ALGORITHM = "HS256"`
   - `JWT_ISSUER = "kestrel"`
   - `JWT_AUDIENCE = "kestrel-api"`
-  These constants are never loaded from environment variables and never taken from unverified token headers.
+  These constants are never loaded from environment variables and never taken from unverified token headers. Tokens are signed with HS256, have a 15-minute default expiration, and contain minimal claims (`sub`, `iat`, `exp`, `iss`, `aud`, `typ`).
 - **Consequences**: Completely eliminates algorithm substitution vulnerabilities; ensures tokens generated for other internal or third-party APIs cannot be replayed against Kestrel endpoints; simplifies configuration while hardening signature verification.
 
 ---
@@ -162,3 +162,15 @@
 - **Context**: Kestrel operates a shared-database, shared-schema multi-tenant model. Hand-crafting SQL queries in routers or ad-hoc handlers creates significant risk of missing a `workspace_id` filter, resulting in cross-tenant data leakage.
 - **Decision**: Require all domain data access to pass through repositories inheriting from `WorkspaceScopedRepository`. The repository requires `workspace_id` at instantiation and automatically applies `statement.where(Model.workspace_id == self.workspace_id)` via `self.scope()`. Unscoped queries are strictly forbidden in business modules and permitted only in authentication for initial email lookup and token ID resolution.
 - **Consequences**: Prevents accidental cross-tenant data leaks by construction; centralizes pagination, sorting, and tenant query logic; provides a single auditing point for data isolation.
+
+---
+
+## ADR-023: Generic authentication errors and dummy-hash verification to limit user enumeration; duplicate-email disclosure at registration accepted for the MVP
+
+- **Status**: Accepted (2026-11-26)
+- **Context**: Authentication endpoints can disclose account existence through disparate error codes/messages or timing discrepancies between valid and nonexistent accounts.
+- **Decision**:
+  1. On login failure, return identical HTTP 401 status, header (`WWW-Authenticate: Bearer`), and body (`{"detail": "Invalid email or password"}`) whether the email does not exist, the password is wrong, or the account is deactivated.
+  2. For nonexistent accounts during login, execute an Argon2id verification against a cached dummy hash (`get_dummy_hash()`) to equalize CPU execution time.
+  3. On registration, return HTTP 409 Conflict (`{"detail": "Email already registered"}`). Disclosing email registration state is accepted for the MVP to prioritize immediate developer usability over delayed email confirmation flows.
+- **Consequences**: Prevents timing attacks and account harvesting on login; adds ~50ms computation on failed logins; trade-off on registration error disclosure is explicitly documented.

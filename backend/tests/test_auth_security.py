@@ -166,3 +166,90 @@ def test_decode_access_token_rejects_non_uuid_sub() -> None:
 
     with pytest.raises(InvalidTokenError, match="not a valid UUID"):
         decode_access_token(token)
+
+
+def test_decode_access_token_rejects_algorithm_none() -> None:
+    """Verify unsigned tokens with algorithm 'none' are rejected."""
+    user_id = uuid.uuid4()
+    now = datetime.now(UTC)
+    payload = {
+        "sub": str(user_id),
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=15)).timestamp()),
+        "iss": JWT_ISSUER,
+        "aud": JWT_AUDIENCE,
+        "typ": "access",
+    }
+    # Create unsigned token header + payload with alg none
+    token_none = jwt.encode(payload, key="", algorithm="none")
+
+    with pytest.raises(InvalidTokenError, match="Invalid token"):
+        decode_access_token(token_none)
+
+
+def test_decode_access_token_rejects_wrong_issuer() -> None:
+    """Verify tokens with unexpected issuer claim are rejected."""
+    user_id = uuid.uuid4()
+    settings = get_settings()
+    now = datetime.now(UTC)
+    payload = {
+        "sub": str(user_id),
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=15)).timestamp()),
+        "iss": "untrusted-issuer",
+        "aud": JWT_AUDIENCE,
+        "typ": "access",
+    }
+    token = jwt.encode(
+        payload,
+        settings.jwt_secret_key.get_secret_value(),
+        algorithm=JWT_ALGORITHM,
+    )
+
+    with pytest.raises(InvalidTokenError, match="Invalid token"):
+        decode_access_token(token)
+
+
+def test_decode_access_token_rejects_wrong_audience() -> None:
+    """Verify tokens with unexpected audience claim are rejected."""
+    user_id = uuid.uuid4()
+    settings = get_settings()
+    now = datetime.now(UTC)
+    payload = {
+        "sub": str(user_id),
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=15)).timestamp()),
+        "iss": JWT_ISSUER,
+        "aud": "wrong-audience",
+        "typ": "access",
+    }
+    token = jwt.encode(
+        payload,
+        settings.jwt_secret_key.get_secret_value(),
+        algorithm=JWT_ALGORITHM,
+    )
+
+    with pytest.raises(InvalidTokenError, match="Invalid token"):
+        decode_access_token(token)
+
+
+def test_decode_access_token_rejects_missing_exp() -> None:
+    """Verify tokens missing required exp claim are rejected."""
+    user_id = uuid.uuid4()
+    settings = get_settings()
+    now = datetime.now(UTC)
+    payload = {
+        "sub": str(user_id),
+        "iat": int(now.timestamp()),
+        "iss": JWT_ISSUER,
+        "aud": JWT_AUDIENCE,
+        "typ": "access",
+    }
+    token = jwt.encode(
+        payload,
+        settings.jwt_secret_key.get_secret_value(),
+        algorithm=JWT_ALGORITHM,
+    )
+
+    with pytest.raises(InvalidTokenError, match="Invalid token"):
+        decode_access_token(token)

@@ -31,6 +31,9 @@
 ```mermaid
 erDiagram
   workspaces ||--o{ users : has
+  workspaces ||--o{ refresh_tokens : isolates
+  users ||--o{ refresh_tokens : has
+  refresh_tokens |o--o| refresh_tokens : replaces
   workspaces ||--o{ api_keys : has
   workspaces ||--o{ provider_connections : has
   provider_connections ||--o{ provider_health_checks : records
@@ -53,6 +56,7 @@ erDiagram
 |---|---|---|---|
 | `workspaces` | Multi-tenant organizational units with budget & retention rules | UUID (`gen_random_uuid()`) | **Implemented (Migration 0001)** |
 | `users` | User credentials and role-based permissions | UUID (`gen_random_uuid()`) | **Implemented (Migration 0001)** |
+| `refresh_tokens` | DB-backed opaque refresh token hashes with rotation & reuse detection | UUID (`gen_random_uuid()`) | Planned (Milestone 5) |
 | `api_keys` | Hashed ingestion credentials for external app telemetry | UUID (`gen_random_uuid()`) | Planned (Ingest Milestone) |
 | `provider_connections` | Encrypted upstream LLM provider API credentials | UUID (`gen_random_uuid()`) | Planned (Providers Milestone) |
 | `provider_health_checks` | Scheduled upstream provider latency and status history | BIGINT IDENTITY | Planned (Providers Milestone) |
@@ -62,8 +66,6 @@ erDiagram
 | `alert_rules` | Threshold conditions for latency, spend, and errors | UUID (`gen_random_uuid()`) | Planned (Alerts Milestone) |
 | `alerts` | Deduplicated firing and resolved incident lifecycle | UUID (`gen_random_uuid()`) | Planned (Alerts Milestone) |
 | `audit_logs` | Immutable audit trail for administrative operations | BIGINT IDENTITY | Planned (Audit Milestone) |
-
-*(Note: Refresh tokens and user sessions are not designed yet; their schema will be determined in the dedicated authentication milestone).*
 
 ---
 
