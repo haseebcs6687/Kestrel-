@@ -5,7 +5,8 @@ from collections.abc import Generator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import inspect, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -321,3 +322,140 @@ def test_login_with_37_char_request_id(auth_client: TestClient, db_session: Sess
     audit_row = db_session.scalar(select(AuditLog).where(AuditLog.action == "auth.login"))
     assert audit_row is not None
     assert audit_row.request_id == req_id_37
+
+
+def test_audit_logs_bigint_identity_increments(db_session: Session) -> None:
+    """Verify audit_logs id column is a BigInteger Identity that increments monotonically."""
+    workspace, _ = _create_workspace_and_user(db_session, email="identity_test@example.com")
+
+    e1 = audit_service.record(
+        db_session, workspace_id=workspace.id, action="test.step1", target_type="test"
+    )
+    e2 = audit_service.record(
+        db_session, workspace_id=workspace.id, action="test.step2", target_type="test"
+    )
+    assert isinstance(e1.id, int)
+    assert isinstance(e2.id, int)
+    assert e2.id > e1.id
+
+
+def test_audit_logs_actor_type_constraint(db_session: Session) -> None:
+    """Verify actor_type check constraint accepts valid values and rejects invalid values."""
+    workspace, _ = _create_workspace_and_user(db_session, email="actortype_test@example.com")
+
+    # Valid actor types
+    for valid_type in ("user", "api_key", "system"):
+        entry = audit_service.record(
+            db_session,
+            workspace_id=workspace.id,
+            action=f"test.{valid_type}",
+            actor_type=valid_type,
+            target_type="test",
+        )
+        assert entry.actor_type == valid_type
+
+    # Invalid actor type rejected by check constraint
+    with pytest.raises(IntegrityError):
+        with db_session.begin_nested():
+            audit_service.record(
+                db_session,
+                workspace_id=workspace.id,
+                action="test.invalid",
+                actor_type="robot",
+                target_type="test",
+            )
+
+
+def test_audit_logs_details_not_null_and_default(db_session: Session) -> None:
+    """Verify details is NOT NULL and defaults to an empty JSON object."""
+    workspace, _ = _create_workspace_and_user(db_session, email="details_test@example.com")
+
+    # Service call with details=None defaults to {}
+    entry = audit_service.record(
+        db_session,
+        workspace_id=workspace.id,
+        action="test.default_details",
+        target_type="test",
+        details=None,
+    )
+    assert entry.details == {}
+
+    # Raw SQL inserting NULL for details raises IntegrityError
+    with pytest.raises(IntegrityError):
+        with db_session.begin_nested():
+            db_session.execute(
+                text(
+                    """
+                    INSERT INTO audit_logs (workspace_id, actor_type, action, details)
+                    VALUES (:ws, 'system', 'test.null_details', NULL)
+                    """
+                ),
+                {"ws": workspace.id},
+            )
+
+
+def test_audit_logs_workspace_fk_restrict(db_session: Session) -> None:
+    """Verify foreign key on workspace_id is ON DELETE RESTRICT (audit logs cannot be orphaned)."""
+    workspace, _ = _create_workspace_and_user(db_session, email="fk_restrict@example.com")
+    audit_service.record(
+        db_session,
+        workspace_id=workspace.id,
+        action="workspace.created",
+        target_type="workspace",
+        target_id=str(workspace.id),
+    )
+
+    with pytest.raises(IntegrityError):
+        with db_session.begin_nested():
+            db_session.delete(workspace)
+            db_session.flush()
+
+
+def test_audit_logs_actor_user_fk_set_null(db_session: Session) -> None:
+    """Verify foreign key on actor_user_id is ON DELETE SET NULL when user is deleted."""
+    workspace, user = _create_workspace_and_user(db_session, email="fk_setnull@example.com")
+    entry = audit_service.record(
+        db_session,
+        workspace_id=workspace.id,
+        action="user.action",
+        actor_type="user",
+        actor_user_id=user.id,
+        target_type="user",
+    )
+    assert entry.actor_user_id == user.id
+
+    db_session.delete(user)
+    db_session.flush()
+
+    db_session.refresh(entry)
+    assert entry.actor_user_id is None
+
+
+def test_audit_logs_schema_inspector(db_session: Session) -> None:
+    """Verify audit_logs table schema matches target specification via SQLAlchemy inspector."""
+    inspector = inspect(db_session.bind)
+    columns = {col["name"] for col in inspector.get_columns("audit_logs")}
+    expected_columns = {
+        "id",
+        "workspace_id",
+        "actor_type",
+        "actor_user_id",
+        "action",
+        "target_type",
+        "target_id",
+        "request_id",
+        "details",
+        "created_at",
+    }
+    assert columns == expected_columns
+    assert "ip_address" not in columns
+    assert "user_agent" not in columns
+    assert "actor_id" not in columns
+    assert "resource_type" not in columns
+    assert "resource_id" not in columns
+
+    indexes = {idx["name"] for idx in inspector.get_indexes("audit_logs")}
+    assert "ix_audit_logs_workspace_id_created_at" in indexes
+    assert "ix_audit_logs_workspace_id_action" in indexes
+    assert "ix_audit_logs_workspace_id" not in indexes
+    assert "ix_audit_logs_created_at" not in indexes

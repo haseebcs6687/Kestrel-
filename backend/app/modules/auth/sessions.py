@@ -126,6 +126,13 @@ def rotate_refresh_token(
 
     user = db.scalar(select(User).where(User.id == token.user_id))
     if user is None or not user.is_active:
+        now = datetime.now(UTC)
+        db.execute(
+            update(RefreshToken)
+            .where(RefreshToken.family_id == token.family_id, RefreshToken.revoked_at.is_(None))
+            .values(revoked_at=now)
+        )
+        db.commit()
         raise InvalidRefreshToken("User inactive")
 
     new_raw, new_token = issue_refresh_token(

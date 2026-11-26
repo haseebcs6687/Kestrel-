@@ -1,5 +1,6 @@
 """Tests for Alembic migration lifecycle and schema drift detection."""
 
+import uuid
 from collections.abc import Generator
 from pathlib import Path
 
@@ -161,3 +162,81 @@ def test_alembic_check_no_schema_drift(throwaway_db: Engine) -> None:
 
     # command.check raises CommandError if drift is detected
     command.check(alembic_cfg)
+
+
+def test_migration_0003_upgrade_downgrade_and_abort_with_rows(throwaway_db: Engine) -> None:
+    """Verify migration 0003 aborts when audit_logs has rows, and downgrades/reupgrades cleanly."""
+    alembic_ini_path = REPO_ROOT / "backend" / "alembic.ini"
+    alembic_cfg = Config(str(alembic_ini_path))
+    alembic_cfg.set_main_option("script_location", str(REPO_ROOT / "backend" / "migrations"))
+    alembic_cfg.attributes["sqlalchemy_url"] = throwaway_db.url
+
+    # 1. Start from 0002
+    command.downgrade(alembic_cfg, "base")
+    command.upgrade(alembic_cfg, "0002")
+
+    # 2. Insert dummy workspace and dummy audit_log row into 0002 schema
+    with throwaway_db.connect() as conn:
+        ws_id = uuid.uuid4()
+        conn.execute(
+            text(
+                """
+                INSERT INTO workspaces (id, name, slug)
+                VALUES (:id, 'Test WS', 'test-ws-abort');
+                """
+            ),
+            {"id": ws_id},
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO audit_logs (id, workspace_id, actor_type, action, resource_type)
+                VALUES (gen_random_uuid(), :ws, 'system', 'test.abort', 'test');
+                """
+            ),
+            {"ws": ws_id},
+        )
+        conn.commit()
+
+    # 3. Attempt upgrade to 0003 -> MUST raise RuntimeError (data loss protection)
+    with pytest.raises(RuntimeError, match="Cannot rebuild audit_logs: table contains 1 row"):
+        command.upgrade(alembic_cfg, "0003")
+
+    # 4. Clean out audit_logs and workspaces
+    with throwaway_db.connect() as conn:
+        conn.execute(text("DELETE FROM audit_logs;"))
+        conn.execute(text("DELETE FROM workspaces;"))
+        conn.commit()
+
+    # 5. Now upgrade to 0003 -> MUST succeed
+    command.upgrade(alembic_cfg, "0003")
+
+    # 6. Verify 0003 target schema columns
+    inspector = inspect(throwaway_db)
+    columns = {col["name"] for col in inspector.get_columns("audit_logs")}
+    expected = {
+        "id",
+        "workspace_id",
+        "actor_type",
+        "actor_user_id",
+        "action",
+        "target_type",
+        "target_id",
+        "request_id",
+        "details",
+        "created_at",
+    }
+    assert columns == expected
+    assert "ip_address" not in columns
+    assert "user_agent" not in columns
+
+    # 7. Downgrade to 0002
+    command.downgrade(alembic_cfg, "0002")
+    inspector_0002 = inspect(throwaway_db)
+    cols_0002 = {col["name"] for col in inspector_0002.get_columns("audit_logs")}
+    assert "actor_id" in cols_0002
+    assert "ip_address" in cols_0002
+
+    # 8. Downgrade to base, then re-upgrade to head
+    command.downgrade(alembic_cfg, "base")
+    command.upgrade(alembic_cfg, "head")
