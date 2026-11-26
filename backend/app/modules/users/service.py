@@ -161,3 +161,38 @@ def update_user(
 
     db.commit()
     return target
+
+
+def admin_reset_password(
+    db: Session,
+    *,
+    actor_user: User,
+    target_user_id: uuid.UUID,
+    new_password: str,
+) -> int:
+    """Administratively reset a workspace user's password and revoke active sessions (ADR-031)."""
+    repo = UserRepository(db, actor_user.workspace_id)
+    target = repo.get_for_update(target_user_id)
+    if target is None:
+        raise UserNotFound("User not found")
+
+    target.password_hash = hash_password(new_password)
+    sessions_revoked = revoke_all_user_tokens(db, target.id)
+
+    audit_service.record(
+        db,
+        workspace_id=actor_user.workspace_id,
+        action="user.password_reset",
+        actor_type="user",
+        actor_user_id=actor_user.id,
+        target_type="user",
+        target_id=str(target.id),
+        details={"sessions_revoked": sessions_revoked},
+    )
+    logger.info(
+        "user_password_reset",
+        user_id=str(target.id),
+        workspace_id=str(actor_user.workspace_id),
+    )
+    db.commit()
+    return sessions_revoked

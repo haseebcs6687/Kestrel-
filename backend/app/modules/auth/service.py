@@ -18,6 +18,7 @@ from app.modules.auth.security import (
     password_needs_rehash,
     verify_password,
 )
+from app.modules.auth.sessions import revoke_all_user_tokens
 from app.modules.workspaces.models import Workspace
 
 logger = structlog.get_logger()
@@ -33,6 +34,14 @@ class EmailAlreadyRegistered(Exception):  # noqa: N818
 
 class InvalidCredentials(Exception):  # noqa: N818
     """Raised when authentication fails due to incorrect credentials or inactive status."""
+
+
+class IncorrectCurrentPassword(Exception):  # noqa: N818
+    """Raised when the current password provided during password change is invalid."""
+
+
+class SamePasswordError(Exception):  # noqa: N818
+    """Raised when the new password is equal to the current password."""
 
 
 def generate_workspace_slug(name: str) -> str:
@@ -177,3 +186,39 @@ def authenticate(
         workspace_id=str(user.workspace_id),
     )
     return user
+
+
+def change_password(
+    db: Session,
+    *,
+    user: User,
+    current_password: str,
+    new_password: str,
+) -> int:
+    """Change the authenticated user's password, revoke all refresh tokens, and audit (ADR-031)."""
+    if not verify_password(current_password, user.password_hash):
+        raise IncorrectCurrentPassword("Current password is incorrect")
+
+    if verify_password(new_password, user.password_hash):
+        raise SamePasswordError("New password must be different")
+
+    user.password_hash = hash_password(new_password)
+    sessions_revoked = revoke_all_user_tokens(db, user.id)
+
+    audit_service.record(
+        db,
+        workspace_id=user.workspace_id,
+        action="auth.password_change",
+        actor_type="user",
+        actor_user_id=user.id,
+        target_type="user",
+        target_id=str(user.id),
+        details={"sessions_revoked": sessions_revoked},
+    )
+    logger.info(
+        "password_changed",
+        user_id=str(user.id),
+        workspace_id=str(user.workspace_id),
+    )
+    db.commit()
+    return sessions_revoked

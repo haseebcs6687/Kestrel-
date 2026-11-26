@@ -3,15 +3,15 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.modules.auth.dependencies import AdminUser
 from app.modules.auth.repository import UserRepository
 from app.modules.auth.schemas import UserRead
-from app.modules.users.schemas import CreateUserRequest, UpdateUserRequest
-from app.modules.users.service import create_user, get_user, update_user
+from app.modules.users.schemas import CreateUserRequest, SetPasswordRequest, UpdateUserRequest
+from app.modules.users.service import admin_reset_password, create_user, get_user, update_user
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -93,3 +93,24 @@ def update_workspace_user(
         is_active=payload.is_active,
     )
     return UserRead.model_validate(user)
+
+
+@router.put(
+    "/{user_id}/password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Admin reset user password and revoke sessions (Admin only)",
+)
+def reset_user_password(
+    user_id: uuid.UUID,
+    payload: SetPasswordRequest,
+    admin_user: AdminUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    """Administratively set a new password for a workspace user and revoke all sessions."""
+    admin_reset_password(
+        db=db,
+        actor_user=admin_user,
+        target_user_id=user_id,
+        new_password=payload.new_password,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

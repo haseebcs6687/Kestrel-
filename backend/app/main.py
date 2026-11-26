@@ -11,8 +11,10 @@ from app.modules.auth.router import clear_refresh_cookie
 from app.modules.auth.router import router as auth_router
 from app.modules.auth.service import (
     EmailAlreadyRegistered,
+    IncorrectCurrentPassword,
     InvalidCredentials,
     RegistrationDisabled,
+    SamePasswordError,
 )
 from app.modules.auth.sessions import InvalidRefreshToken, RefreshTokenReused
 from app.modules.platform.router import router as platform_router
@@ -91,6 +93,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return JSONResponse(
             status_code=status.HTTP_409_CONFLICT,
             content={"detail": "Cannot remove the last active admin"},
+        )
+
+    @app.exception_handler(IncorrectCurrentPassword)
+    def incorrect_current_password_handler(
+        request: Request, exc: IncorrectCurrentPassword
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"detail": "Current password is incorrect"},
+        )
+
+    @app.exception_handler(SamePasswordError)
+    def same_password_error_handler(request: Request, exc: SamePasswordError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"detail": "New password must be different"},
         )
 
     app.add_middleware(RequestIdAndLoggingMiddleware)

@@ -16,6 +16,7 @@ from app.core.config import (
 from app.core.db import get_db
 from app.modules.auth.dependencies import CurrentUser
 from app.modules.auth.schemas import (
+    ChangePasswordRequest,
     LoginRequest,
     MeResponse,
     RegisterRequest,
@@ -29,6 +30,7 @@ from app.modules.auth.service import (
     InvalidCredentials,
     RegistrationDisabled,
     authenticate,
+    change_password,
     register,
 )
 from app.modules.auth.sessions import (
@@ -236,3 +238,28 @@ def get_current_user_profile(
         last_login_at=current_user.last_login_at,
         workspace=workspace_read,
     )
+
+
+@router.post(
+    "/change-password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Change user password and revoke all active refresh tokens",
+)
+def change_user_password(
+    payload: ChangePasswordRequest,
+    current_user: CurrentUser,
+    response: Response,
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Response:
+    """Change the authenticated user's password, invalidate all sessions, and clear cookie."""
+    change_password(
+        db=db,
+        user=current_user,
+        current_password=payload.current_password,
+        new_password=payload.new_password,
+    )
+    response.status_code = status.HTTP_204_NO_CONTENT
+    response.headers["Cache-Control"] = "no-store"
+    clear_refresh_cookie(response, settings)
+    return response

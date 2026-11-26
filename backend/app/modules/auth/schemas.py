@@ -74,3 +74,12 @@ class MeResponse(BaseModel):
     created_at: datetime
     last_login_at: datetime | None = None
     workspace: WorkspaceRead
+
+
+class ChangePasswordRequest(BaseModel):
+    """Payload for self-service password change."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    current_password: str = Field(max_length=128)
+    new_password: str = Field(min_length=12, max_length=128)

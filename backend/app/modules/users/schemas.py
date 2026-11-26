@@ -31,3 +31,11 @@ class UpdateUserRequest(BaseModel):
         if self.role is None and self.is_active is None:
             raise ValueError("At least one field ('role' or 'is_active') must be provided")
         return self
+
+
+class SetPasswordRequest(BaseModel):
+    """Payload for administrative password reset."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    new_password: str = Field(min_length=12, max_length=128)
