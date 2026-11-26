@@ -5,6 +5,30 @@ Each entry follows: Concept | Definition | Why it matters | How we used it | Arc
 
 ---
 
+## Learning Notes — Milestone 7: User Management, Concurrency Protection & Password Lifecycle
+
+- **Concepts Covered**: Race conditions, pessimistic row locks (`FOR UPDATE`), last-admin invariant, soft vs hard delete, multi-tenant 404 vs 403 isolation, session revocation, 400 vs 401 credential error semantics, and admin trust model.
+- **Definitions & Architecture**:
+  - *Last-Admin Invariant & Row Locks (ADR-030)*: Two concurrent admins demoting each other could both read count=2 and succeed, leaving 0 admins. Enforcing `SELECT ... FROM workspaces WHERE id = :id FOR UPDATE` serializes admin updates per tenant in PostgreSQL, guaranteeing atomic invariant evaluation.
+  - *Soft Deactivation vs Hard Deletion*: Deactivating (`is_active = false`) preserves relational foreign keys and immutable audit records (`actor_user_id`), whereas hard deletion destroys forensics. `get_current_user` rejects deactivated users instantly on next request.
+  - *Cross-Tenant 404 Isolation*: Requesting another tenant's `user_id` returns 404 Not Found rather than 403 Forbidden to prevent cross-tenant user ID enumeration.
+  - *Session Revocation (ADR-031)*: User deactivation, admin password resets, and self-service password changes execute `revoke_all_user_tokens(db, user_id)`, invalidating all active refresh token families to terminate stolen sessions.
+  - *HTTP 400 vs 401 on Password Change*: Wrong `current_password` returns 400 Bad Request, not 401 Unauthorized; 401 indicates invalid/missing bearer JWT which triggers client-side logout interceptors, while 400 indicates an invalid payload.
+- **Terminology**: Row lock (`FOR UPDATE`), Last-admin invariant, Soft delete, Multi-tenant enumeration, Session revocation, Credential payload error.
+- **Interview Questions & Answers**:
+  1. *Q: How do you prevent a race condition where two administrators demote each other simultaneously, leaving a tenant without an admin?*
+     A: Acquire a pessimistic row lock on the parent workspace (`SELECT id FROM workspaces WHERE id = :id FOR UPDATE`) inside the transaction before counting active admins. The second transaction blocks until the first commits, reading the updated count (=1) and rejecting the demotion with 409 Conflict.
+  2. *Q: Why should user accounts in multi-tenant SaaS platforms be soft-deactivated instead of hard-deleted?*
+     A: Hard-deleting users deletes or orphans historical audit logs, breaks foreign key integrity, and destroys forensic auditability. Setting `is_active=false` immediately revokes access while keeping historical records intact.
+  3. *Q: Why return 404 Not Found instead of 403 Forbidden when an admin requests a user ID belonging to another workspace?*
+     A: Returning 403 confirms the targeted user ID exists in the system (cross-tenant enumeration attack). Returning 404 treats resources outside the caller's tenant boundary as nonexistent, preserving total tenant isolation.
+  4. *Q: Why should an endpoint validating a "current password" return HTTP 400 instead of HTTP 401 when the password is incorrect?*
+     A: HTTP 401 signifies that the caller's authorization header (JWT) is missing or invalid, prompting automated client interceptors to log the user out. An incorrect current password is a failed payload validation, requiring HTTP 400.
+- **Practical Mistakes**: Verifying admin counts without row locks, allowing TOCTOU race conditions; returning 403 on foreign tenant resources; failing to revoke refresh tokens on password change; returning 401 on incorrect current password.
+- **Revision Summary**: Milestone 7 delivers production-grade user management with concurrency-safe invariants, strict tenant isolation, and session revocation.
+
+---
+
 ## Learning Notes — Milestone 6: GitHub Actions CI for Backend
 
 - **Concepts Covered**: Service containers in CI, deterministic lockfile installations, dynamic runner secret masking (`::add-mask::`), dual-layer secret scanning, and advisory dependency vulnerability auditing.

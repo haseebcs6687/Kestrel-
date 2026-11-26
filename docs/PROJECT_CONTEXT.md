@@ -11,19 +11,20 @@
   - Milestone 5: Sessions and audit: DB-backed opaque refresh tokens with rotation and reuse detection, HttpOnly cookies, and append-only audit trail (Tag: `m5-sessions-audit`).
   - Milestone 5b: Corrective rebuild of `audit_logs` via migration 0003, request-ID 64-character fix, model and repository updates, and full constraint test coverage (Tag: `m5b-schema-fix`).
   - Milestone 6: GitHub Actions CI for backend: PostgreSQL 17 service container, uv sync, lint, migration drift check, pytest test suite, dual-layer secret scanning (in-repo script + Gitleaks), and advisory dependency vulnerability auditing (Tag: `m6-ci`).
-- **Current Milestone**: Milestone 6 complete; preparing Milestone 7.
+  - Milestone 7: User management: admin user creation, read, update, workspace row lock concurrency protection on last active admin, admin password reset, self-service password change, and session revocation (Tag: `m7-user-management`).
+- **Current Milestone**: Milestone 7 complete; preparing Milestone 8.
 - **Known Bugs**: None.
-- **Next Action**: Milestone 7 (Workspace CRUD, membership, invitations, and switcher).
+- **Next Action**: Milestone 8 (API keys and telemetry ingestion endpoint `POST /api/v1/ingest/events`).
 
 ## Development Workflow
 - **Direct-to-Main**: Development proceeds directly on branch `main` using Conventional Commits. No feature branch overhead or pull request delays for solo implementation.
-- **Milestone Tags**: Each completed milestone is tagged on `main` (e.g. `m1-docker-postgres`, `m2-backend-skeleton`, `m5-sessions-audit`, `m6-ci`) to provide immutable rollback points.
+- **Milestone Tags**: Each completed milestone is tagged on `main` (e.g. `m1-docker-postgres`, `m2-backend-skeleton`, `m5-sessions-audit`, `m6-ci`, `m7-user-management`) to provide immutable rollback points.
 - **Pre-Push Quality Gate**: Before pushing to `main`, six automated checks must pass:
   1. `uv run ruff check .` (from `backend/`)
   2. `uv run ruff format --check .` (from `backend/`)
   3. `uv run alembic upgrade head` (from `backend/`)
   4. `uv run alembic check` (zero schema drift, from `backend/`)
-  5. `uv run pytest -ra` (against real PostgreSQL container, 112 tests passing, from `backend/`)
+  5. `uv run pytest -ra` (against real PostgreSQL container, 137 tests passing, from `backend/`)
   6. `python scripts/secret_scan.py` (from repo root, scanning tracked files and forbidden `.env*` files)
 
 ## Architecture & Technology Summary
@@ -63,10 +64,13 @@ backend/
         security.py         # Argon2id password hashing and JWT/refresh token helpers
         service.py          # Registration, login authentication workflows
         sessions.py         # Refresh token rotation, reuse detection, and revocation
-        users_router.py     # /users administrative listing endpoint
       platform/             # Liveness (/health) and readiness (/health/ready) probes
         router.py
         schemas.py
+      users/                # User management (create, read, update, admin password reset)
+        router.py           # /users endpoints (admin-restricted)
+        schemas.py          # CreateUserRequest, UpdateUserRequest, SetPasswordRequest
+        service.py          # User lifecycle and last-admin invariant protection
       workspaces/           # Workspace model and multi-tenant management
         models.py
   migrations/               # Alembic database migrations environment

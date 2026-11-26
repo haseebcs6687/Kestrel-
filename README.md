@@ -4,7 +4,7 @@
 
 Kestrel AI Control Center is an observability and operations dashboard for LLM-powered applications. It tracks usage, token consumption, cost, latency, errors, provider health, and operational alerts across AI systems, providing engineering teams with centralized visibility and control over their LLM integrations.
 
-**Status: in development — Milestone 6**
+**Status: in development — Milestone 7**
 
 ## Tech Stack
 
@@ -32,12 +32,12 @@ Kestrel AI Control Center is an observability and operations dashboard for LLM-p
 
 ## Implementation Status
 
-**Implemented**: Repository skeleton, documentation system, Docker Compose PostgreSQL 17 development environment, FastAPI backend skeleton with configuration, structured logging, request-ID middleware, database connection module, `/health` and `/health/ready` probes, database schema design, Alembic migrations (`0001`, `0002`, and `0003`), SQLAlchemy 2.0 `workspaces`, `users`, `refresh_tokens`, and canonical `audit_logs` models, Argon2id password hashing, JWT bearer token authentication, HttpOnly refresh token rotation with reuse detection, `/api/v1/auth/register`, `/api/v1/auth/login`, `/api/v1/auth/refresh`, `/api/v1/auth/logout`, `/api/v1/auth/me`, workspace-scoped repository multi-tenant isolation (`WorkspaceScopedRepository`), `/api/v1/users` role-based access control, `/api/v1/audit-logs` administrative endpoint, and GitHub Actions CI workflow (PostgreSQL 17 service container, uv sync, linting, migration check, pytest suite, in-repo secret scan, Gitleaks, and advisory dependency audit). Tested with 112 automated unit and integration tests running against PostgreSQL.
+**Implemented**: Repository skeleton, documentation system, Docker Compose PostgreSQL 17 development environment, FastAPI backend skeleton with configuration, structured logging, request-ID middleware, database connection module, `/health` and `/health/ready` probes, database schema design, Alembic migrations (`0001`, `0002`, and `0003`), SQLAlchemy 2.0 `workspaces`, `users`, `refresh_tokens`, and canonical `audit_logs` models, Argon2id password hashing, JWT bearer token authentication, HttpOnly refresh token rotation with reuse detection, `/api/v1/auth/register`, `/api/v1/auth/login`, `/api/v1/auth/refresh`, `/api/v1/auth/logout`, `/api/v1/auth/me`, `/api/v1/auth/change-password`, user management module (`POST /api/v1/users`, `GET /api/v1/users`, `GET /api/v1/users/{user_id}`, `PATCH /api/v1/users/{user_id}`, `PUT /api/v1/users/{user_id}/password`), workspace row lock concurrency protection on last active admin, workspace-scoped repository multi-tenant isolation (`WorkspaceScopedRepository`), session family revocation on lifecycle changes, `/api/v1/audit-logs` administrative endpoint, and GitHub Actions CI workflow (PostgreSQL 17 service container, uv sync, linting, migration check, pytest suite, in-repo secret scan, Gitleaks, and advisory dependency audit). Tested with 137 automated unit and integration tests running against PostgreSQL.
 
 ## Continuous Integration
 
 Every push to `main` and pull request triggers automated CI checks defined in [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
-1. **Backend (`backend`)**: Runs on Ubuntu with a real PostgreSQL 17 service container. Performs `uv run ruff check .`, `uv run ruff format --check .`, `uv run alembic upgrade head`, `uv run alembic check` (schema drift detection), and `uv run pytest -ra` (112 tests).
+1. **Backend (`backend`)**: Runs on Ubuntu with a real PostgreSQL 17 service container. Performs `uv run ruff check .`, `uv run ruff format --check .`, `uv run alembic upgrade head`, `uv run alembic check` (schema drift detection), and `uv run pytest -ra` (137 tests).
 2. **Secret Scan (`secrets`)**: Full repository scan using the in-repo script `scripts/secret_scan.py` followed by `gitleaks/gitleaks-action@v3`.
 3. **Dependency Audit (`dependency-audit`)**: Exports locked dependencies and runs `pip-audit` via `uvx` (advisory, non-blocking).
 

@@ -1,6 +1,63 @@
 # Implementation Log — Kestrel AI Control Center
 
-## 2026-11-26 — Milestone 6: GitHub Actions CI for Backend
+## 2026-11-26 — Milestone 7: User Management, Concurrency Protection & Password Lifecycle
+
+### Objectives
+- Part 0 — Review Follow-Ups & CI Negative Probe:
+  - Redo CI negative probe on dedicated branch `ci-test/negative-pytest`: added typed probe test triggering `pytest.fail()`, confirmed local ruff lint/format cleanly passed, pushed to remote, polled GitHub Actions CI Run ID `45847914172` confirming failure exclusively in `Run test suite` step while all other steps succeeded; deleted remote and local probe branch.
+  - Test mapping checklist: verified all 10 checklist test categories against 112 collected pytest node IDs (0 gaps).
+  - Secret scanner audit: verified `scripts/secret_scan.py` contains exactly 4 patterns (`sk-`, `AIza`, `gsk_`, `-----BEGIN ...`) and 1 tracked `.env` rule with zero extra patterns.
+  - Dependency vulnerability scan: exported dependencies and ran `pip-audit`, confirming 0 known vulnerabilities.
+- Foundations & Concurrency Helpers (Commit 2):
+  - Added recursive `_validate_details` in `audit/service.py` checking nested dicts, lists, sets, and tuples for forbidden credential substrings.
+  - Added `revoke_all_user_tokens(db, user_id) -> int` in `auth/sessions.py` for atomic multi-session termination.
+  - Added `lock_workspace(db, workspace_id)` in `core/tenancy.py` executing `SELECT id FROM workspaces WHERE id = :id FOR UPDATE`.
+  - Added `get_for_update(user_id)` and `count_active_admins()` to `UserRepository`.
+- User Management Module (Commit 3):
+  - Created `backend/app/modules/users/`: schemas (`CreateUserRequest`, `UpdateUserRequest`), service (`create_user`, `get_user`, `update_user`, `LastAdminError`, `UserNotFound`), and router (`POST /api/v1/users`, `GET /api/v1/users`, `GET /api/v1/users/{user_id}`, `PATCH /api/v1/users/{user_id}`).
+  - Enforced last-active-admin invariant under workspace row lock.
+  - Deleted legacy `auth/users_router.py`. Registered domain exception handlers in `app/main.py`.
+- Password Lifecycle & Session Revocation (Commit 4):
+  - Added admin password reset (`PUT /api/v1/users/{user_id}/password`) invoking `revoke_all_user_tokens`.
+  - Added self-service password change (`POST /api/v1/auth/change-password`) with `current_password` verification, `SamePasswordError` prohibition, cookie clearance, and session revocation.
+  - Registered HTTP 400 exception handlers in `main.py` for credential update errors.
+- Test Suite & Concurrency Verification (Commit 5):
+  - Created `backend/tests/test_users_api.py` (21 tests) covering CRUD, role/active mutations, last-admin protection, admin resets, change-password, and log safety.
+  - Created `backend/tests/test_users_concurrency.py` (2 tests) verifying SQL row lock semantics and executing a real two-admin simultaneous demotion race test via `threading.Barrier` across concurrent DB sessions (exactly 1 succeeds, 1 receives 409 Conflict, 1 active admin remains).
+  - Added recursive audit guard tests and session revocation tests (total 137 tests passing).
+- Verification & Clean Teardown:
+  - Verified pre-smoke dev DB isolation (0 rows).
+  - Executed live smoke drill (`run_smoke.py`) with detached uvicorn against dev database covering all 10 smoke steps.
+  - Inspected captured server logs: zero secret, password, or token leaks.
+  - Cleaned up dev DB rows in FK-safe order (confirmed 0 rows across `workspaces`, `users`, `refresh_tokens`, `audit_logs`). Confirmed port 8000 closed.
+- Documentation & ADRs (Commit 6):
+  - Recorded ADR-030 (user deactivation, workspace row lock on last admin, 404 tenant isolation).
+  - Recorded ADR-031 (session revocation on password changes/resets, 400 for incorrect current password).
+  - Updated `docs/SECURITY.md`, `backend/README.md`, `README.md`, roadmap, status, context, and learning notes.
+
+### Files Created & Modified
+- `backend/app/core/tenancy.py`: Added `lock_workspace`.
+- `backend/app/modules/audit/service.py`: Added recursive `_validate_details`.
+- `backend/app/modules/auth/repository.py`: Added `get_for_update` and `count_active_admins`.
+- `backend/app/modules/auth/router.py`: Added `POST /change-password` endpoint.
+- `backend/app/modules/auth/service.py`: Added `change_password`, `IncorrectCurrentPassword`, `SamePasswordError`.
+- `backend/app/modules/auth/sessions.py`: Added `revoke_all_user_tokens`.
+- `backend/app/modules/users/__init__.py`: Module initialization.
+- `backend/app/modules/users/router.py`: User management router.
+- `backend/app/modules/users/schemas.py`: `CreateUserRequest`, `UpdateUserRequest`, `SetPasswordRequest`.
+- `backend/app/modules/users/service.py`: User lifecycle, last-admin lock enforcement, admin password reset.
+- `backend/app/main.py`: Updated router imports and exception handlers.
+- `backend/tests/test_users_api.py`: 21 user management unit and integration tests.
+- `backend/tests/test_users_concurrency.py`: Concurrency race condition tests.
+- `backend/tests/test_audit.py`: Added recursive audit sanitization tests.
+- `backend/tests/test_sessions.py`: Added `test_revoke_all_user_tokens`.
+- `docs/ARCHITECTURE_DECISIONS.md`: Added ADR-030 and ADR-031.
+- `docs/SECURITY.md`: Added User Management section and updated gaps table.
+- `backend/README.md`, `README.md`: Updated endpoints, descriptions, and test counts.
+- `docs/ROADMAP.md`, `docs/PROJECT_STATUS.md`, `docs/PROJECT_CONTEXT.md`, `docs/TODO.md`: Updated project tracking.
+- `docs/LEARNING_NOTES.md`: Added Milestone 7 notes and interview Q&As.
+
+---
 
 ### Objectives
 - Close Milestone 5b review gaps: review test suite against checklist, add `test_audit_log_order_newest_first` to `backend/tests/test_audit.py`.

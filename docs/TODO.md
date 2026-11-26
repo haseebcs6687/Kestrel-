@@ -9,6 +9,7 @@
 - [x] **Milestone 5**: Sessions and audit: DB-backed opaque refresh tokens with rotation and reuse detection, HttpOnly cookies, append-only audit trail (`audit_logs`), and `/api/v1/audit-logs` endpoint.
 - [x] **Milestone 5b**: Corrective milestone: migration 0003 rebuilds `audit_logs` to match schema design, full 64-char request-ID support, and constraint/session test coverage.
 - [x] **Milestone 6**: GitHub Actions CI for backend (PostgreSQL 17 service container, uv sync, linting, migration drift check, pytest suite, in-repo secret scanner script with tests, Gitleaks, and advisory dependency vulnerability auditing).
+- [x] **Milestone 7**: User management & lifecycle: admin user creation, read, update, workspace row lock concurrency protection on last active admin, admin password reset, self-service password change, and session revocation.
 
 ## Remaining Planning Tasks
 - [x] **Database Schema & ERD**: Detailed entity-relationship model covering all 12 tables, constraints, indexes, and Mermaid ERD in `docs/DATABASE_SCHEMA.md`.
@@ -23,17 +24,17 @@
 - [ ] **Phase 2 UI/UX Design System**: Token definitions (typography, spacing, colors) matching Minia aesthetic without asset copying.
 
 ## Upcoming Milestones
-- **Milestone 6**: Ingestion API endpoint (`POST /api/v1/ingest/events`), API key authentication (`api_keys`), and telemetry payload validation.
-- **Milestone 7**: Thin Python telemetry client wrapper SDK (sync/async buffer queue with background thread flush).
-- **Milestone 8**: Provider connections (`provider_connections`), Fernet credential encryption, and latency health probes.
-- **Milestone 9**: Model pricing rate cards (`model_prices`) and real-time USD cost calculation.
-- **Milestone 10**: Usage analytics engine, pre-aggregated rollups (`usage_hourly`), and latency percentiles.
-- **Milestone 11**: Alert rules engine (`alert_rules`, `alerts`) and incident deduplication lifecycle.
-- **Milestone 12**: Outbound notification webhooks (Slack, Discord, generic) with delivery retry policies.
-- **Milestone 13**: Rate limiting (Redis sliding-window) and edge hardening (CORS, security headers).
-- **Milestone 14**: Frontend foundations (Vite, React 19, TypeScript, Tailwind CSS, shadcn/ui).
-- **Milestone 15**: Frontend auth flows, in-memory token storage, silent background refresh, and route guards.
-- **Milestone 16**: Observability dashboard, live velocity graphs, and cost breakdown charts.
-- **Milestone 17**: Incident manager, audit log viewer, and API key management console.
-- **Milestone 18**: Prompt evaluation sandbox, model benchmarking, and side-by-side comparison matrix.
-- **Milestone 19**: Production packaging, Docker multi-stage images, and GitHub Actions CI/CD workflows.
+- **Milestone 8**: Ingestion API endpoint (`POST /api/v1/ingest/events`), API key authentication (`api_keys`), and telemetry payload validation.
+- **Milestone 9**: Thin Python telemetry client wrapper SDK (sync/async buffer queue with background thread flush).
+- **Milestone 10**: Provider connections (`provider_connections`), Fernet credential encryption, and latency health probes.
+- **Milestone 11**: Model pricing rate cards (`model_prices`) and real-time USD cost calculation.
+- **Milestone 12**: Usage analytics engine, pre-aggregated rollups (`usage_hourly`), and latency percentiles.
+- **Milestone 13**: Alert rules engine (`alert_rules`, `alerts`) and incident deduplication lifecycle.
+- **Milestone 14**: Outbound notification webhooks (Slack, Discord, generic) with delivery retry policies.
+- **Milestone 15**: Rate limiting (Redis sliding-window) and edge hardening (CORS, security headers).
+- **Milestone 16**: Frontend foundations (Vite, React 19, TypeScript, Tailwind CSS, shadcn/ui).
+- **Milestone 17**: Frontend auth flows, in-memory token storage, silent background refresh, and route guards.
+- **Milestone 18**: Observability dashboard, live velocity graphs, and cost breakdown charts.
+- **Milestone 19**: Incident manager, audit log viewer, and API key management console.
+- **Milestone 20**: Prompt evaluation sandbox, model benchmarking, and side-by-side comparison matrix.
+- **Milestone 21**: Production packaging, Docker multi-stage images, and GitHub Actions CI/CD workflows.

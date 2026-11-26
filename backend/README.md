@@ -32,16 +32,20 @@ backend/
         dependencies.py     # CurrentUser and AdminUser token dependencies
         models.py           # User and RefreshToken SQLAlchemy models and Role enum
         repository.py       # Scoped UserRepository and unscoped lookups
-        router.py           # /auth endpoints (register, login, refresh, logout, me)
+        router.py           # /auth endpoints (register, login, refresh, logout, me, change-password)
         schemas.py          # Pydantic schemas for auth and profile
         security.py         # Argon2id password hashing and JWT/refresh token helpers
         service.py          # Registration, login authentication workflows
         sessions.py         # Refresh token rotation, reuse detection, and revocation
-        users_router.py     # /users administrative listing endpoint
       platform/             # Liveness (/health) and readiness (/health/ready) probes
         __init__.py
         router.py
         schemas.py
+      users/                # User management (create, read, update, admin password reset)
+        __init__.py
+        router.py           # /users endpoints (admin-restricted)
+        schemas.py          # CreateUserRequest, UpdateUserRequest, SetPasswordRequest
+        service.py          # User lifecycle and last-admin invariant protection
       workspaces/           # Workspace model and multi-tenant management
         __init__.py
         models.py
@@ -100,11 +104,48 @@ Alembic manages all schema evolution against PostgreSQL:
 | `GET` | `/health` | Liveness probe returning `200 {"status": "ok"}` | Unversioned root | Public |
 | `GET` | `/health/ready` | Readiness probe verifying DB ping via `SELECT 1` | Unversioned root | Public |
 | `POST`| `/api/v1/auth/register` | Register admin user and create workspace | Versioned `/api/v1` | Public |
-| `POST`| `/api/v1/auth/login` | Authenticate credentials and issue bearer JWT | Versioned `/api/v1` | Public |
+| `POST`| `/api/v1/auth/login` | Authenticate credentials and issue bearer JWT & refresh cookie | Versioned `/api/v1` | Public |
+| `POST`| `/api/v1/auth/refresh` | Rotate refresh token and issue new token pair | Versioned `/api/v1` | HttpOnly Cookie |
+| `POST`| `/api/v1/auth/logout` | Revoke session family and clear refresh cookie | Versioned `/api/v1` | HttpOnly Cookie |
 | `GET` | `/api/v1/auth/me` | Fetch authenticated user profile & workspace | Versioned `/api/v1` | Bearer Token |
+| `POST`| `/api/v1/auth/change-password` | Self-service password change; revokes sessions & clears cookie | Versioned `/api/v1` | Bearer Token |
+| `POST`| `/api/v1/users` | Admin provisions a new user within workspace | Versioned `/api/v1` | Admin Only |
 | `GET` | `/api/v1/users` | List users in caller's workspace (paginated) | Versioned `/api/v1` | Admin Only |
+| `GET` | `/api/v1/users/{user_id}` | Read user details by ID (404 for other tenants) | Versioned `/api/v1` | Admin Only |
+| `PATCH`| `/api/v1/users/{user_id}` | Update role or is_active (workspace row lock on last admin) | Versioned `/api/v1` | Admin Only |
+| `PUT` | `/api/v1/users/{user_id}/password` | Admin resets user password and revokes all sessions | Versioned `/api/v1` | Admin Only |
+| `GET` | `/api/v1/audit-logs` | Retrieve audit log entries (paginated) | Versioned `/api/v1` | Admin Only |
 | `GET` | `/docs` | Interactive Swagger API documentation (disabled in prod) | Unversioned root | Public |
 | `GET` | `/openapi.json`| OpenAPI 3.1 specification schema (disabled in prod) | Unversioned root | Public |
 
-> [!NOTE]
-> Infrastructure health and readiness probes are unversioned at the root (`/health`, `/health/ready`), whereas domain product APIs will reside under `/api/v1` in upcoming milestones.
+### Example CLI Invocations (curl)
+
+```bash
+# Provision a new user (Admin only)
+curl.exe -X POST http://127.0.0.1:8000/api/v1/users \
+  -H "Authorization: Bearer <ADMIN_ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "engineer@example.com", "password": "<SECURE_PASSWORD>", "role": "viewer"}'
+
+# Read user details (Admin only)
+curl.exe -X GET http://127.0.0.1:8000/api/v1/users/<USER_UUID> \
+  -H "Authorization: Bearer <ADMIN_ACCESS_TOKEN>"
+
+# Update user role or active state (Admin only)
+curl.exe -X PATCH http://127.0.0.1:8000/api/v1/users/<USER_UUID> \
+  -H "Authorization: Bearer <ADMIN_ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"role": "admin"}'
+
+# Admin reset user password (Admin only)
+curl.exe -X PUT http://127.0.0.1:8000/api/v1/users/<USER_UUID>/password \
+  -H "Authorization: Bearer <ADMIN_ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"new_password": "<NEW_SECURE_PASSWORD>"}'
+
+# Self-service password change
+curl.exe -X POST http://127.0.0.1:8000/api/v1/auth/change-password \
+  -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"current_password": "<CURRENT_PASSWORD>", "new_password": "<NEW_PASSWORD>"}'
+```

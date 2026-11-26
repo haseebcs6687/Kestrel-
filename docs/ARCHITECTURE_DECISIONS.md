@@ -259,3 +259,33 @@
   - Secret scanning outputs only file paths and line numbers, never matching token text.
   - Dual-layer CI secret scanning protects against both custom project-specific leaks and broad common credential formats.
   - Advisory status on `pip-audit` provides immediate visibility into newly discovered CVEs without blocking critical releases or developer velocity while fixes or upstream updates are pending.
+
+---
+
+## ADR-030: User Management: Deactivation Instead of Deletion; Last-Active-Admin Protection Enforced Under Workspace Row Lock; Multi-Tenant 404 Isolation
+
+- **Status**: Accepted (2026-11-26)
+- **Context**: User lifecycles require provisioning, role updates, and termination. Hard-deleting user rows destroys historical audit trails (`actor_user_id`), breaks relational foreign key integrity, and makes post-incident forensic investigation impossible. Furthermore, concurrent admin demotion or deactivation requests could simultaneously pass read checks and leave a workspace with zero active admins (a lock-out condition). Finally, inquiring about or mutating users across workspaces must not reveal cross-tenant user existence.
+- **Decision**:
+  1. **Deactivation Instead of Deletion**: Users are never hard-deleted from the database. Offboarding is achieved strictly by setting `is_active = false`. Deactivated users are blocked immediately by `get_current_user` on subsequent requests and all active refresh tokens are revoked.
+  2. **Last-Active-Admin Invariant via Workspace Row Lock**: A workspace must always retain at least one active administrator. To eliminate mutual-demotion or deactivation race conditions between concurrent admin requests, `update_user` acquires an exclusive row lock on the parent workspace (`SELECT id FROM workspaces WHERE id = :workspace_id FOR UPDATE`) before checking the remaining active admin count. Any transaction attempting to deactivate or demote the last active admin is rejected with HTTP 409 Conflict (`Cannot remove the last active admin`).
+  3. **Multi-Tenant 404 Isolation**: Any attempt to read, update, or reset the password of a user belonging to another workspace returns HTTP 404 Not Found, never HTTP 403 Forbidden. Cross-tenant user IDs are treated as nonexistent to prevent ID enumeration.
+- **Consequences**:
+  - Complete preservation of historical audit records and referential integrity across the datastore.
+  - Eliminates the race condition where concurrent admins simultaneously demote or deactivate each other, rendering the tenant orphan.
+  - Strict tenant boundary enforcement prevents cross-tenant identity discovery.
+
+---
+
+## ADR-031: Password Management: Session and Refresh Token Revocation on Changes/Resets; 400 for Incorrect Current Password
+
+- **Status**: Accepted (2026-11-26)
+- **Context**: When a user's password changes (either via administrative reset or self-service password update), existing authenticated sessions may represent compromised devices or stolen credentials that must not continue renewing tokens. Additionally, error handling for incorrect current passwords must be carefully designed to distinguish credential errors from unauthenticated requests.
+- **Decision**:
+  1. **Immediate Session Revocation**: Whenever a user's password is reset by an admin (`PUT /api/v1/users/{user_id}/password`) or changed by the user (`POST /api/v1/auth/change-password`), the service executes `revoke_all_user_tokens(db, user_id)`, immediately revoking all active refresh tokens across all session families for that user. On self-service change, the response also clears the caller's `kestrel_refresh` cookie (`Max-Age=0`).
+  2. **Error Semantics for Current Password**: When an authenticated user calls `POST /api/v1/auth/change-password` with an incorrect `current_password`, the endpoint returns HTTP 400 Bad Request (`{"detail": "Incorrect current password"}`), NOT HTTP 401 Unauthorized. HTTP 401 indicates that the caller's bearer authentication token is invalid or missing, which triggers client-side logout interceptors. HTTP 400 indicates that the caller is authenticated but submitted invalid payload parameters.
+  3. **Identical Password Prohibition**: Changing a password to the identical existing password is rejected with HTTP 400 Bad Request (`{"detail": "New password cannot be the same as the current password"}`) to prevent accidental no-op credential changes.
+- **Consequences**:
+  - Prevents attackers with existing refresh tokens from continuing to rotate sessions after a legitimate password reset or change.
+  - Clean separation in frontend HTTP interceptors between expired auth tokens (401) and failed form validation/wrong current password (400).
+  - Short-lived JWTs (15 min) expire naturally and cannot be renewed once refresh tokens are revoked.
