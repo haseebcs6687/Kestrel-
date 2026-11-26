@@ -4,9 +4,13 @@ import pytest
 from pydantic import SecretStr, ValidationError
 
 from app.core.config import (
+    CSRF_HEADER_NAME,
+    CSRF_HEADER_VALUE,
     JWT_ALGORITHM,
     JWT_AUDIENCE,
     JWT_ISSUER,
+    REFRESH_COOKIE_NAME,
+    REFRESH_COOKIE_PATH,
     Settings,
     get_settings,
 )
@@ -110,6 +114,108 @@ def test_jwt_constants() -> None:
     assert JWT_ALGORITHM == "HS256"
     assert JWT_ISSUER == "kestrel"
     assert JWT_AUDIENCE == "kestrel-api"
+
+
+def test_session_constants() -> None:
+    """Verify session cookie and CSRF header constants are immutable code constants."""
+    assert REFRESH_COOKIE_NAME == "kestrel_refresh"
+    assert REFRESH_COOKIE_PATH == "/api/v1/auth"
+    assert CSRF_HEADER_NAME == "X-Kestrel-Client"
+    assert CSRF_HEADER_VALUE == "web"
+
+
+def test_refresh_token_days_bounds() -> None:
+    """Verify refresh_token_days bounds (1..30) and default value (7)."""
+    valid_key = SecretStr("a" * 32)
+    s = Settings(
+        postgres_user="u",
+        postgres_password=SecretStr("p"),
+        postgres_db="d",
+        jwt_secret_key=valid_key,
+    )
+    assert s.refresh_token_days == 7
+
+    s1 = Settings(
+        postgres_user="u",
+        postgres_password=SecretStr("p"),
+        postgres_db="d",
+        jwt_secret_key=valid_key,
+        refresh_token_days=1,
+    )
+    assert s1.refresh_token_days == 1
+
+    s30 = Settings(
+        postgres_user="u",
+        postgres_password=SecretStr("p"),
+        postgres_db="d",
+        jwt_secret_key=valid_key,
+        refresh_token_days=30,
+    )
+    assert s30.refresh_token_days == 30
+
+    with pytest.raises(ValidationError):
+        Settings(
+            postgres_user="u",
+            postgres_password=SecretStr("p"),
+            postgres_db="d",
+            jwt_secret_key=valid_key,
+            refresh_token_days=0,
+        )
+
+    with pytest.raises(ValidationError):
+        Settings(
+            postgres_user="u",
+            postgres_password=SecretStr("p"),
+            postgres_db="d",
+            jwt_secret_key=valid_key,
+            refresh_token_days=31,
+        )
+
+
+def test_cookie_secure_resolution() -> None:
+    """Verify is_cookie_secure resolves based on app_env and explicit override."""
+    valid_key = SecretStr("a" * 32)
+    # Dev default -> False
+    s_dev = Settings(
+        postgres_user="u",
+        postgres_password=SecretStr("p"),
+        postgres_db="d",
+        jwt_secret_key=valid_key,
+        app_env="dev",
+    )
+    assert s_dev.is_cookie_secure is False
+
+    # Prod default -> True
+    s_prod = Settings(
+        postgres_user="u",
+        postgres_password=SecretStr("p"),
+        postgres_db="d",
+        jwt_secret_key=valid_key,
+        app_env="prod",
+    )
+    assert s_prod.is_cookie_secure is True
+
+    # Explicit override True in dev
+    s_override_true = Settings(
+        postgres_user="u",
+        postgres_password=SecretStr("p"),
+        postgres_db="d",
+        jwt_secret_key=valid_key,
+        app_env="dev",
+        cookie_secure=True,
+    )
+    assert s_override_true.is_cookie_secure is True
+
+    # Explicit override False in prod
+    s_override_false = Settings(
+        postgres_user="u",
+        postgres_password=SecretStr("p"),
+        postgres_db="d",
+        jwt_secret_key=valid_key,
+        app_env="prod",
+        cookie_secure=False,
+    )
+    assert s_override_false.is_cookie_secure is False
 
 
 def test_sqlalchemy_url_driver_and_database() -> None:

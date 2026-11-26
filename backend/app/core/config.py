@@ -16,6 +16,12 @@ JWT_ALGORITHM: str = "HS256"
 JWT_ISSUER: str = "kestrel"
 JWT_AUDIENCE: str = "kestrel-api"
 
+# Session & Cookie constants - Hard-coded in code, never read from env
+REFRESH_COOKIE_NAME: str = "kestrel_refresh"
+REFRESH_COOKIE_PATH: str = "/api/v1/auth"
+CSRF_HEADER_NAME: str = "X-Kestrel-Client"
+CSRF_HEADER_VALUE: str = "web"
+
 
 class Settings(BaseSettings):
     """Central application settings loaded from environment and root .env."""
@@ -37,6 +43,15 @@ class Settings(BaseSettings):
     jwt_secret_key: SecretStr
     access_token_minutes: int = Field(default=15, ge=1, le=60)
     registration_enabled: bool = True
+    refresh_token_days: int = Field(default=7, ge=1, le=30)
+    cookie_secure: bool | None = None
+
+    @property
+    def is_cookie_secure(self) -> bool:
+        """Resolve whether auth cookies should enforce the Secure attribute."""
+        if self.cookie_secure is not None:
+            return self.cookie_secure
+        return self.app_env == "prod"
 
     @field_validator("jwt_secret_key")
     @classmethod
