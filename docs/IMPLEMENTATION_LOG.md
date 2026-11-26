@@ -1,5 +1,49 @@
 # Implementation Log — Kestrel AI Control Center
 
+## 2026-11-26 — Milestone 3: Database Schema Design, Alembic Migrations & Identity Models
+
+### Objectives
+- Perform Milestone 2 review housekeeping: diagnose Starlette deprecation warning, add `test_docs_exposure.py` verifying `/docs` and `/redoc` return 404 in prod, and update ADR-004 to reflect SQLAlchemy 2.x typed API.
+- Author complete database schema design document (`docs/DATABASE_SCHEMA.md`) cataloging all 11 relational tables, conventions, constraints, and Mermaid ERD.
+- Initialize Alembic migration framework (`alembic.ini`, `migrations/env.py`, `script.py.mako`) integrated with dynamic Pydantic configuration.
+- Implement SQLAlchemy 2.0 base architecture (`Base`, `NAMING_CONVENTION`, `UUIDPrimaryKeyMixin`, `TimestampMixin`).
+- Implement `Workspace` and `User` models with `Role` enum, strict check constraints, foreign keys, and indexes.
+- Author centralized metadata discovery in `app/core/models_registry.py` and generate first migration `0001_create_workspaces_and_users.py`.
+- Establish test database fixtures in `tests/conftest.py` with automatic `kestrel_test` provisioning, migration to `head`, and transactional savepoint rollback per test.
+- Author model constraint tests (`tests/test_models_workspaces_users.py`) and migration lifecycle tests (`tests/test_migrations.py`) using throwaway database `kestrel_migration_test`.
+- Execute verification drills: `alembic upgrade head`, `alembic current`, `alembic history`, `alembic check` (0 drift), schema inspection via psql, and `downgrade base` / `upgrade head` cycle.
+- Author ADR-016 (UUIDv4), ADR-017 (VARCHAR+CHECK), ADR-018 (Alembic & Test DB), and ADR-019 (SHA-256 vs Argon2id).
+
+### Files Created & Modified
+- `docs/DATABASE_SCHEMA.md`: Full catalog of 11 tables, constraints, index strategy, and ERD.
+- `backend/alembic.ini`: Alembic migration configuration.
+- `backend/migrations/env.py`: Environment script with programmatic URL injection bypassing interpolation bugs.
+- `backend/migrations/script.py.mako`: Migration template.
+- `backend/migrations/versions/0001_create_workspaces_and_users.py`: First migration script.
+- `backend/app/core/base.py`: Declarative base with explicit PostgreSQL naming conventions and mixins.
+- `backend/app/core/models_registry.py`: Central registry importing all models for Alembic discovery.
+- `backend/app/modules/workspaces/models.py`: Workspace SQLAlchemy model.
+- `backend/app/modules/auth/models.py`: User SQLAlchemy model and Role enum.
+- `backend/tests/conftest.py`: Test fixtures for `kestrel_test` and transactional savepoint rollback.
+- `backend/tests/test_docs_exposure.py`: API docs route exposure tests across environments.
+- `backend/tests/test_models_workspaces_users.py`: Constraint, relationship, and default tests for Workspace and User.
+- `backend/tests/test_migrations.py`: Migration lifecycle and drift tests with throwaway DB.
+- `backend/pyproject.toml` & `backend/uv.lock`: Added `alembic` (v1.20.1) dependency.
+- `backend/README.md`: Documented Alembic migration commands and test DB strategy.
+- `README.md`: Added database migration instructions and updated status.
+- `docs/ARCHITECTURE_DECISIONS.md`: Added ADR-016 through ADR-019.
+- `docs/PROJECT_STATUS.md`: Marked Milestone 3 complete.
+- `docs/PROJECT_CONTEXT.md`: Updated milestone status and backend layout.
+- `docs/LEARNING_NOTES.md`: Added Milestone 3 learning notes.
+- `docs/TODO.md`: Ticked Milestone 3 and refined Milestone 4.
+
+### Decisions & Deviations
+- *Alembic URL Escaping*: Instead of setting `config.set_main_option("sqlalchemy.url", ...)`, which fails when passwords contain `%` characters due to ConfigParser interpolation, we pass the URL via `config.attributes["sqlalchemy_url"] = ...` and read it in `env.py`.
+- *Savepoint Test Nesting*: When testing constraint violations with `pytest.raises(IntegrityError)`, `db_session.add()` and `db_session.flush()` must occur inside `with pytest.raises(IntegrityError), db_session.begin_nested():` so that `begin_nested()` creates the savepoint before the auto-flush and safely catches the constraint error.
+- *Native UUID Default*: Used native PostgreSQL 13+ `gen_random_uuid()` as server default, avoiding additional extensions like `pgcrypto` or `uuid-ossp`.
+
+---
+
 ## 2026-11-26 — Milestone 2: Backend Skeleton & Operational Probes
 
 ### Objectives

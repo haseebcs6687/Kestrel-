@@ -89,3 +89,45 @@
 - **Context**: A solo engineering cadence requires eliminating pull request latency while preserving strict repository safety, traceable rollback points, and non-negotiable code quality.
 - **Decision**: Commit directly to `main` with Conventional Commits, tagging each completed milestone (e.g. `m1-docker-postgres`, `m2-backend-skeleton`) and enforcing a mandatory pre-push quality gate (`ruff check`, `ruff format --check`, `pytest`, secret scan).
 - **Consequences**: Maximizes development velocity without branch sprawl; tags provide exact immutable rollback points; pre-push gates guarantee broken code or secrets never land on `main`.
+
+---
+
+## ADR-016: UUIDv4 vs BIGINT Identity for Primary Keys
+
+- **Status**: Accepted (2026-11-26)
+- **Context**: Kestrel stores multi-tenant workspace entities, user identities, provider connections, and high-volume telemetry records. We must select a primary key strategy that supports distributed generation, prevents enumeration attacks, and maintains database performance.
+- **Decision**: Standardize on UUIDv4 (PostgreSQL native `UUID` type with server default `gen_random_uuid()`) for primary keys on all relation tables (`workspaces`, `users`, `api_keys`, `providers`, `pricing_rules`, `alerts`, `incidents`, `audit_logs`).
+- **Consequences**: IDs can be generated safely client-side or by application workers prior to persistence; eliminates sequential ID crawling and guessing across workspaces; avoids cross-environment ID collision during testing; slightly larger storage size (16 bytes vs 8 bytes for `BIGINT`), which is negligible for entity tables and fully supported by PostgreSQL native operators. High-throughput telemetry events will pair UUIDv4/UUIDv7 with time-series range partitioning.
+
+---
+
+## ADR-017: VARCHAR with CHECK Constraints vs PostgreSQL Native ENUM for Categorical Fields
+
+- **Status**: Accepted (2026-11-26)
+- **Context**: Multiple tables require constrained categorical values (e.g. `users.role IN ('admin', 'viewer')`, `providers.provider_type`, `incidents.status`). PostgreSQL provides both native `ENUM` types (`CREATE TYPE ... AS ENUM`) and `VARCHAR(N)` columns bounded by table-level `CHECK` constraints.
+- **Decision**: Standardize on `VARCHAR(N)` with explicit, named `CHECK` constraints (e.g., `ck_users_role_valid`) across all models instead of PostgreSQL native `ENUM` types.
+- **Consequences**: PostgreSQL native enums present operational challenges: adding values cannot easily be rolled back in transactions, altering or renaming values requires non-transactional metadata locks, and dropping enum values is difficult. `CHECK` constraints are fully transactional, easily modified via standard `ALTER TABLE ... DROP/ADD CONSTRAINT`, cleanly inspected by Alembic autogenerate, and portable.
+
+---
+
+## ADR-018: Alembic Migrations and Dedicated Test Database Strategy
+
+- **Status**: Accepted (2026-11-26)
+- **Context**: Database schema evolution must be version-controlled, repeatable, and reversible. Automated tests must execute against real PostgreSQL to validate Postgres-specific SQL, constraints, and indexes without mutating developer or production data or causing concurrency collisions.
+- **Decision**:
+  1. Manage all DDL through Alembic version scripts in `backend/migrations/versions/`.
+  2. Use a dedicated test database (`kestrel_test`) automatically provisioned and migrated to `head` in session-scoped pytest fixtures. Individual test cases run in function-scoped nested transactions with savepoints (`join_transaction_mode="create_savepoint"`) and rollback on teardown.
+  3. Author dedicated migration lifecycle tests (`backend/tests/test_migrations.py`) using an ephemeral throwaway database (`kestrel_migration_test`) that verifies upgrade to `head`, downgrade to `base`, re-upgrade to `head`, and validates zero schema drift via `alembic check`.
+  4. Enforce safety guards: test fixtures strictly refuse to connect to or drop any database name that does not end with `_test`.
+- **Consequences**: Schema migrations are validated on every test run; test cases execute in milliseconds without re-migrating between tests; schema drift between SQLAlchemy ORM metadata and migration files is caught automatically.
+
+---
+
+## ADR-019: SHA-256 for API Keys vs Argon2id for User Passwords
+
+- **Status**: Accepted (2026-11-26)
+- **Context**: Telemetry ingestion (`POST /ingest/events`) receives high-frequency client requests authenticated via workspace API keys. Dashboard users authenticate via human passwords. The security and performance profiles for these two credential types differ fundamentally.
+- **Decision**:
+  1. User passwords will use Argon2id with recommended memory and iteration parameters (high compute cost to defeat offline dictionary attacks on human-chosen passwords).
+  2. Workspace API keys will use high-entropy random tokens (e.g. `ks_live_<32_random_bytes>`) stored exclusively as unsalted SHA-256 hashes (`key_hash VARCHAR(64)`).
+- **Consequences**: API key verification requires a fast SHA-256 digest computation (< 1ms), preventing ingestion bottlenecks; high entropy of generated keys eliminates dictionary attacks. User passwords have an intentional ~100-300ms verification cost suitable for interactive login. Plaintext secrets are never persisted in the database.

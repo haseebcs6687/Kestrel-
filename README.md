@@ -2,7 +2,7 @@
 
 Kestrel AI Control Center is an observability and operations dashboard for LLM-powered applications. It tracks usage, token consumption, cost, latency, errors, provider health, and operational alerts across AI systems, providing engineering teams with centralized visibility and control over their LLM integrations.
 
-**Status: in development — Milestone 2**
+**Status: in development — Milestone 3**
 
 ## Tech Stack
 
@@ -18,7 +18,8 @@ Kestrel AI Control Center is an observability and operations dashboard for LLM-p
 
 - [Product Requirements Document (PRD)](docs/PRD.md) — Product vision, user roles, functional and non-functional requirements.
 - [System Architecture](docs/ARCHITECTURE.md) — Process topology, architectural invariants, backend modules, and provider adapter design.
-- [Architecture Decisions (ADRs)](docs/ARCHITECTURE_DECISIONS.md) — 15 Architecture Decision Records documenting key engineering trade-offs.
+- [Database Schema Design](docs/DATABASE_SCHEMA.md) — Catalog of 11 relational tables, conventions, constraints, and Mermaid ERD.
+- [Architecture Decisions (ADRs)](docs/ARCHITECTURE_DECISIONS.md) — 19 Architecture Decision Records documenting key engineering trade-offs.
 - [Learning Notes](docs/LEARNING_NOTES.md) — Key conceptual definitions, operational rationale, and interview takeaways.
 - [Project Context](docs/PROJECT_CONTEXT.md) — Compact context for agent continuity, environment state, and direct-to-main workflow.
 - [Project Status](docs/PROJECT_STATUS.md) — Current milestone status matrix and implementation tracking.
@@ -27,7 +28,7 @@ Kestrel AI Control Center is an observability and operations dashboard for LLM-p
 
 ## Implementation Status
 
-**Implemented**: Repository skeleton, documentation system, Docker Compose PostgreSQL 17 development environment, and FastAPI backend skeleton with configuration, structured logging, request-ID middleware, database connection module, `/health` (liveness) and `/health/ready` (readiness) probes, and automated test suite.
+**Implemented**: Repository skeleton, documentation system, Docker Compose PostgreSQL 17 development environment, FastAPI backend skeleton with configuration, structured logging, request-ID middleware, database connection module, `/health` and `/health/ready` probes, database schema design, Alembic migrations environment, SQLAlchemy 2.0 `workspaces` and `users` models, and automated test suite with transactional savepoints and dedicated test databases.
 
 ## Local Development
 
@@ -56,6 +57,18 @@ Kestrel AI Control Center is an observability and operations dashboard for LLM-p
    ```
    > [!WARNING]
    > Running `docker compose down -v` removes the named volume and **permanently deletes** all local database data.
+
+### Database Migrations
+1. Apply migrations to the local PostgreSQL database:
+   ```bash
+   cd backend
+   uv run alembic upgrade head
+   ```
+2. Verify migration state and check for schema drift:
+   ```bash
+   uv run alembic current
+   uv run alembic check
+   ```
 
 ### Running the Backend API
 1. Ensure the PostgreSQL container is running (`docker compose up -d`).

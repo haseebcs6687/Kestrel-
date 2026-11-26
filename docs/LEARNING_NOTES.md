@@ -5,6 +5,31 @@ Each entry follows: Concept | Definition | Why it matters | How we used it | Arc
 
 ---
 
+## Learning Notes — Milestone 3: Database Schema Design, Alembic & Identity Models
+
+- **Concepts Covered**: Database migration lifecycle, schema drift detection, declarative naming conventions, UUIDv4 vs BIGINT, VARCHAR + CHECK vs PostgreSQL native ENUM, transactional savepoint testing isolation.
+- **Definitions & Architecture**:
+  - *Alembic Migration Lifecycle*: Versioned DDL scripts providing forward (`upgrade`) and backward (`downgrade`) schema state transitions; `alembic_version` stores the applied revision.
+  - *Schema Drift*: Discrepancy between SQLAlchemy Python model definitions and live database tables, detected automatically via `alembic check`.
+  - *Naming Convention*: Explicit naming dictionary (`ix_`, `uq_`, `ck_`, `fk_`, `pk_`) ensuring deterministic constraint names across PostgreSQL and Alembic autogeneration.
+  - *Transactional Savepoints*: Running test cases within a nested transaction (`SAVEPOINT`); rolling back to the savepoint restores the database in microseconds without slow table dropping.
+  - *CHECK Constraints vs Native ENUM*: String columns bounded by `CHECK (col IN (...))` allow fully transactional schema updates, whereas native PostgreSQL enums hinder rollback.
+- **Terminology**: Revision, Head, Base, Savepoint, Schema drift, DDL, `gen_random_uuid()`, Autocommit, Foreign key RESTRICT.
+- **Example**: `command.check(alembic_cfg)` compares `target_metadata` with DB schema and raises an exception if untracked model fields or missing migrations exist.
+- **Interview Questions & Answers**:
+  1. *Q: Why use transactional savepoints in pytest fixtures instead of rebuilding tables per test?*
+     A: DDL table creation is slow (~100-500ms per test). Nested transactions (`SAVEPOINT`) allow test isolation with instantaneous rollbacks (< 1ms).
+  2. *Q: What are the drawbacks of PostgreSQL native ENUMs compared to VARCHAR + CHECK constraints?*
+     A: Native ENUM mutations cannot be rolled back inside transactions in many PG operations, values cannot easily be removed, and migration scripts require non-standard DDL.
+  3. *Q: How does `alembic check` prevent uncommitted schema changes from breaking production?*
+     A: It executes autogenerate comparison logic headlessly; if any model attribute does not match the migration history, the command exits with non-zero status.
+  4. *Q: Why use `ON DELETE RESTRICT` for workspace-to-user relationships instead of `CASCADE`?*
+     A: Prevents accidental bulk data deletion when deleting a workspace; requires explicit deliberate pruning of associated users first.
+- **Practical Mistakes**: Passing database URLs containing `%` directly to `config.set_main_option()` (triggers `ConfigParser` crash); invoking `db_session.add()` before `begin_nested()` when expecting `IntegrityError`; running tests against development database instead of dedicated `_test` DB.
+- **Revision Summary**: Milestone 3 establishes an immutable migration history, strict constraint-driven identity models, and zero-drift CI verification.
+
+---
+
 ## Learning Notes — Milestone 2: Backend Skeleton & Probes
 
 - **Concepts Covered**: Application factory pattern, dependency injection with `get_db`, Pydantic Settings & `SecretStr`, liveness vs readiness probes, request IDs and structured logging, sync vs async endpoints, and lockfile determinism.
