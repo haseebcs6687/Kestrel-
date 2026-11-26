@@ -18,10 +18,10 @@
 - **Decision**: Use a single PostgreSQL database leveraging native indexing, `percentile_cont`, and scheduled rollup tables for analytical queries.
 - **Consequences**: Minimizes operational overhead and infrastructure complexity during MVP; avoids dual-write synchronization bugs; can revisit TimescaleDB or Redis when measured throughput necessitates.
 
-### ADR 004: Synchronous SQLAlchemy 2.0 with Async HTTPX for Outbound Calls
+### ADR 004: Synchronous SQLAlchemy 2.x with Async HTTPX for Outbound Calls
 - **Status**: Accepted
 - **Context**: FastAPI supports asynchronous database drivers, but async ORM code increases debugging complexity, connection pool subtleties, and test harness fragility.
-- **Decision**: Use synchronous SQLAlchemy 2.0 with Alembic for all database operations, while using async `httpx` for outbound provider health probes and model queries.
+- **Decision**: Use synchronous SQLAlchemy 2.x (2.1.9 locked) with the 2.0-style typed API (`Mapped`, `mapped_column`) and Alembic for all database operations, while using async `httpx` for outbound provider health probes and model queries.
 - **Consequences**: Delivers reliable, straightforward database transactions and debugging; outbound network I/O remains non-blocking for background tasks.
 
 ### ADR 005: Separate Worker Process with APScheduler
