@@ -17,11 +17,19 @@ backend/
       logging.py            # Structlog configuration (JSON for prod, console for dev)
       middleware.py         # Request-ID tracking and structured access logging
       models_registry.py    # Centralized model registry for Alembic discovery
+      tenancy.py            # WorkspaceScopedRepository multi-tenant base class
     modules/
       __init__.py
       auth/                 # User model, authentication and role definitions
         __init__.py
-        models.py
+        dependencies.py     # CurrentUser and AdminUser token dependencies
+        models.py           # User SQLAlchemy model and Role enum
+        repository.py       # Scoped UserRepository and unscoped lookups
+        router.py           # /auth endpoints (register, login, me)
+        schemas.py          # Pydantic schemas for auth and profile
+        security.py         # Argon2id password hashing and JWT token handlers
+        service.py          # Registration, login authentication workflows
+        users_router.py     # /users administrative listing endpoint
       platform/             # Liveness (/health) and readiness (/health/ready) probes
         __init__.py
         router.py
@@ -37,12 +45,15 @@ backend/
   tests/
     __init__.py
     conftest.py             # TestClient, kestrel_test DB engine, and savepoint fixtures
+    test_auth_api.py        # Registration, login, profile, and RBAC endpoint tests
+    test_auth_security.py   # Argon2id and JWT unit tests
     test_config.py          # Configuration loading and secret masking tests
     test_docs_exposure.py   # Swagger/OpenAPI exposure tests across environments
     test_health.py          # /health and /health/ready liveness and readiness tests
     test_migrations.py      # Alembic upgrade/downgrade/upgrade lifecycle and drift tests
     test_models_workspaces_users.py # Workspace and User ORM models & constraint tests
     test_request_id.py      # X-Request-ID propagation, validation, and generation tests
+    test_tenancy.py         # WorkspaceScopedRepository isolation tests
   alembic.ini               # Alembic migration configuration
   pyproject.toml            # Project definition, runtime/dev dependencies, ruff, and pytest config
   uv.lock                   # Deterministic dependency lockfile
@@ -77,6 +88,10 @@ Alembic manages all schema evolution against PostgreSQL:
 |---|---|---|---|---|
 | `GET` | `/health` | Liveness probe returning `200 {"status": "ok"}` | Unversioned root | Public |
 | `GET` | `/health/ready` | Readiness probe verifying DB ping via `SELECT 1` | Unversioned root | Public |
+| `POST`| `/api/v1/auth/register` | Register admin user and create workspace | Versioned `/api/v1` | Public |
+| `POST`| `/api/v1/auth/login` | Authenticate credentials and issue bearer JWT | Versioned `/api/v1` | Public |
+| `GET` | `/api/v1/auth/me` | Fetch authenticated user profile & workspace | Versioned `/api/v1` | Bearer Token |
+| `GET` | `/api/v1/users` | List users in caller's workspace (paginated) | Versioned `/api/v1` | Admin Only |
 | `GET` | `/docs` | Interactive Swagger API documentation (disabled in prod) | Unversioned root | Public |
 | `GET` | `/openapi.json`| OpenAPI 3.1 specification schema (disabled in prod) | Unversioned root | Public |
 

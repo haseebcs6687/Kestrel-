@@ -5,6 +5,31 @@ Each entry follows: Concept | Definition | Why it matters | How we used it | Arc
 
 ---
 
+## Learning Notes — Milestone 4: Authentication Core & Multi-Tenant Isolation
+
+- **Concepts Covered**: Memory-hard password hashing with Argon2id, timing attack equalization, JWT stateless tokens vs live database authorization, mass-assignment defense, and workspace-scoped repository isolation.
+- **Definitions & Architecture**:
+  - *Argon2id*: Hybrid password hashing algorithm combining data-dependent and data-independent memory access; highly resilient against side-channel and GPU/ASIC brute-force attacks.
+  - *Timing Equalization (`get_dummy_hash`)*: Executing password verification against a synthetic hash when an email is not found, equalizing response times to prevent username enumeration.
+  - *Dynamic Database Authorization (ADR-021)*: Restricting JWT claims to `sub` (user UUID); loading active status and roles from PostgreSQL on every request to enable instantaneous access revocation.
+  - *`WorkspaceScopedRepository` (ADR-022)*: Architectural pattern that automatically enforces tenant boundaries (`WHERE workspace_id = :id`) on all domain queries by construction.
+  - *Mass Assignment Protection*: Pydantic model configuration (`extra="forbid"`) preventing malicious clients from injecting administrative fields (`role`, `is_active`) on public endpoints.
+- **Terminology**: Argon2id, Timing attack, Subject claim (`sub`), Dummy hash, Repository pattern, Mass assignment, RBAC, Bearer scheme, Scope constraint.
+- **Example**: `UserRepository(db, ws_id).list_users()` automatically applies `where(User.workspace_id == ws_id)`, making cross-tenant user leaks impossible.
+- **Interview Questions & Answers**:
+  1. *Q: Why store only the user ID in the JWT rather than embedding their role and workspace ID?*
+     A: Embedding permissions makes revocation difficult; querying the database on each request ensures immediate enforcement if a user is deactivated or demoted.
+  2. *Q: How does a dummy hash prevent account enumeration timing attacks?*
+     A: Password verification takes ~50-100ms. If nonexistent accounts return immediately (< 1ms), attackers can measure latency to discover valid email addresses.
+  3. *Q: Why use `extra="forbid"` on Pydantic request models?*
+     A: Protects against mass assignment vulnerabilities where attackers submit undocumented payload fields (e.g. `role: "admin"`) hoping backend code persists them.
+  4. *Q: Why hardcode JWT security constants (`HS256`, `iss`, `aud`) instead of reading them from environment variables?*
+     A: Eliminates algorithm confusion attacks and ensures tokens cannot be generated or replayed across disparate environments or untrusted issuers.
+- **Practical Mistakes**: Trusting JWT claims without checking `is_active` in the database; querying tenant data without repository scoping; setting JWT expiration too long without refresh tokens.
+- **Revision Summary**: Milestone 4 establishes a hardened Argon2id + JWT authentication core, complete multi-tenant isolation, and zero-trust request authorization.
+
+---
+
 ## Learning Notes — Milestone 3: Database Schema Design, Alembic & Identity Models
 
 - **Concepts Covered**: Database migration lifecycle, schema drift detection, declarative naming conventions, UUIDv4 vs BIGINT, VARCHAR + CHECK vs PostgreSQL native ENUM, transactional savepoint testing isolation.

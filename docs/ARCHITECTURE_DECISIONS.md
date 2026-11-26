@@ -131,3 +131,34 @@
   1. User passwords will use Argon2id with recommended memory and iteration parameters (high compute cost to defeat offline dictionary attacks on human-chosen passwords).
   2. Workspace API keys will use high-entropy random tokens (e.g. `ks_live_<32_random_bytes>`) stored exclusively as unsalted SHA-256 hashes (`key_hash VARCHAR(64)`).
 - **Consequences**: API key verification requires a fast SHA-256 digest computation (< 1ms), preventing ingestion bottlenecks; high entropy of generated keys eliminates dictionary attacks. User passwords have an intentional ~100-300ms verification cost suitable for interactive login. Plaintext secrets are never persisted in the database.
+
+---
+
+## ADR-020: Hardcoded JWT Security Constants vs Environment Configuration
+
+- **Status**: Accepted (2026-11-26)
+- **Context**: JWT implementations can be vulnerable to algorithm confusion attacks (e.g., accepting `none` or switching symmetric/asymmetric algorithms) or signature forgery if issuers, audiences, and algorithms are loosely configured or dynamically parsed from unverified token headers.
+- **Decision**: Hardcode JWT cryptographic constants in application code:
+  - `JWT_ALGORITHM = "HS256"`
+  - `JWT_ISSUER = "kestrel"`
+  - `JWT_AUDIENCE = "kestrel-api"`
+  These constants are never loaded from environment variables and never taken from unverified token headers.
+- **Consequences**: Completely eliminates algorithm substitution vulnerabilities; ensures tokens generated for other internal or third-party APIs cannot be replayed against Kestrel endpoints; simplifies configuration while hardening signature verification.
+
+---
+
+## ADR-021: Database-Backed Authorization over Rich JWT Token Claims
+
+- **Status**: Accepted (2026-11-26)
+- **Context**: Purely stateless JWT architectures encode user permissions, roles, and tenant IDs directly in claims. However, if a user is compromised, deactivated, or demoted, their existing tokens remain authorized until expiration (up to 60 minutes), requiring complex distributed token revocation lists or Redis blacklists.
+- **Decision**: Keep access tokens strictly minimal, containing only `sub` (user UUID) and standard timestamp claims. On every authenticated request, `get_current_user` decodes the UUID and queries PostgreSQL to verify that the user exists and `is_active` is true, retrieving their live `role` and `workspace_id`.
+- **Consequences**: Immediate authorization revocation upon user deactivation with zero lag; avoids token bloat; adds one indexed primary key lookup per request (~0.5ms on local/pooled PostgreSQL), which is acceptable for dashboard and management traffic. High-frequency telemetry ingestion uses API keys, not JWTs.
+
+---
+
+## ADR-022: Workspace-Scoped Repository Pattern for Multi-Tenant Isolation
+
+- **Status**: Accepted (2026-11-26)
+- **Context**: Kestrel operates a shared-database, shared-schema multi-tenant model. Hand-crafting SQL queries in routers or ad-hoc handlers creates significant risk of missing a `workspace_id` filter, resulting in cross-tenant data leakage.
+- **Decision**: Require all domain data access to pass through repositories inheriting from `WorkspaceScopedRepository`. The repository requires `workspace_id` at instantiation and automatically applies `statement.where(Model.workspace_id == self.workspace_id)` via `self.scope()`. Unscoped queries are strictly forbidden in business modules and permitted only in authentication for initial email lookup and token ID resolution.
+- **Consequences**: Prevents accidental cross-tenant data leaks by construction; centralizes pagination, sorting, and tenant query logic; provides a single auditing point for data isolation.

@@ -7,9 +7,10 @@
   - Milestone 1: Docker Compose PostgreSQL 17 environment (Tag: `m1-docker-postgres`).
   - Milestone 2: FastAPI backend skeleton, configuration, logging, request IDs, database connectivity, and health probes (Tag: `m2-backend-skeleton`).
   - Milestone 3: Database schema design, Alembic migrations, `workspaces` and `users` models, and dedicated test databases (Tag: `m3-alembic-identity`).
-- **Current Milestone**: Milestone 3 complete; preparing Milestone 4.
+  - Milestone 4: Authentication core, Argon2id password hashing, JWT bearer tokens, RBAC, and workspace-scoped repository isolation (Tag: `m4-auth-core`).
+- **Current Milestone**: Milestone 4 complete; preparing Milestone 5.
 - **Known Bugs**: None.
-- **Next Action**: Milestone 4 (Auth & User Management / Ingestion API).
+- **Next Action**: Milestone 5 (Ingestion API & thin Python telemetry client wrapper).
 
 ## Development Workflow
 - **Direct-to-Main**: Development proceeds directly on branch `main` using Conventional Commits. No feature branch overhead or pull request delays for solo implementation.
@@ -40,9 +41,17 @@ backend/
       logging.py            # Structlog configuration (JSON for prod, console for dev)
       middleware.py         # Request-ID tracking and structured access logging
       models_registry.py    # Centralized model registry for Alembic discovery
+      tenancy.py            # WorkspaceScopedRepository multi-tenant base class
     modules/
       auth/                 # User model, authentication and role definitions
-        models.py
+        dependencies.py     # CurrentUser and AdminUser token dependencies
+        models.py           # User SQLAlchemy model and Role enum
+        repository.py       # Scoped UserRepository and unscoped lookups
+        router.py           # /auth endpoints (register, login, me)
+        schemas.py          # Pydantic schemas for auth and profile
+        security.py         # Argon2id password hashing and JWT token handlers
+        service.py          # Registration, login authentication workflows
+        users_router.py     # /users administrative listing endpoint
       platform/             # Liveness (/health) and readiness (/health/ready) probes
         router.py
         schemas.py
@@ -55,12 +64,15 @@ backend/
       0001_create_workspaces_and_users.py
   tests/
     conftest.py             # TestClient, kestrel_test DB engine, and savepoint fixtures
+    test_auth_api.py        # Registration, login, profile, and RBAC endpoint tests
+    test_auth_security.py   # Argon2id and JWT unit tests
     test_config.py          # Configuration loading and secret masking tests
     test_docs_exposure.py   # Swagger/OpenAPI exposure tests across environments
     test_health.py          # /health and /health/ready liveness and readiness tests
     test_migrations.py      # Alembic upgrade/downgrade/upgrade lifecycle and drift tests
     test_models_workspaces_users.py # Workspace and User ORM models & constraint tests
     test_request_id.py      # X-Request-ID propagation, validation, and generation tests
+    test_tenancy.py         # WorkspaceScopedRepository isolation tests
   alembic.ini
   pyproject.toml
   uv.lock
@@ -70,6 +82,6 @@ backend/
 - **Host OS**: Windows 11 (PowerShell) with WSL 2 backend
 - **Runtimes & Tools**: Python 3.13.15, Node 24, Git 2.55, `uv` 0.13.10
 - **Docker**: Docker version 29.9.3 (build 5457199), Docker Compose version v5.7.1
-- **Primary Locked Dependencies**: FastAPI 0.165.0, Uvicorn 0.54.0, SQLAlchemy 2.1.9, Alembic 1.20.1, Psycopg 3.3.9, Pydantic 2.14.4, Structlog 26.1.0, Pytest 9.2.0, Ruff 0.17.6
+- **Primary Locked Dependencies**: FastAPI 0.165.0, Uvicorn 0.54.0, SQLAlchemy 2.1.9, Alembic 1.20.1, Argon2-cffi 25.1.0, PyJWT 2.15.1, Email-validator 2.4.0, Psycopg 3.3.9, Pydantic 2.14.4, Structlog 26.1.0, Pytest 9.2.0, Ruff 0.17.6
 - **Database Configuration**: Container `kestrel-postgres-1` (PostgreSQL 17.12), Port 5432 bound to `127.0.0.1`
 - **Git Remote**: `https://github.com/haseebcs6687/Kestrel-.git` (Public repository)

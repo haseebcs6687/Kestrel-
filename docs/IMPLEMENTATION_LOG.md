@@ -1,5 +1,53 @@
 # Implementation Log — Kestrel AI Control Center
 
+## 2026-11-26 — Milestone 4: Authentication Core & Workspace-Scoped Multi-Tenancy
+
+### Objectives
+- Complete Milestone 3 Part 0 follow-ups: resolve Alembic deprecation warnings via `path_separator = os`, verify 100% naming convention alignment, prove dev-database isolation after full pytest suite run, verify zero credentials in `alembic.ini`.
+- Add `argon2-cffi`, `pyjwt`, and `email-validator` dependencies to `pyproject.toml` and `uv.lock`.
+- Extend `Settings` with `jwt_secret_key` (`SecretStr`, >= 32 chars, forbids `change_me`), `access_token_minutes` (1..60), `registration_enabled`, and immutable code constants (`HS256`, `kestrel`, `kestrel-api`).
+- Append random 64-character URL-safe `JWT_SECRET_KEY` to local `.env` and configure dynamic session generation in `tests/conftest.py`.
+- Implement `WorkspaceScopedRepository` (`app/core/tenancy.py`) as central multi-tenant isolation mechanism (ADR-022).
+- Implement cryptographic utilities (`app/modules/auth/security.py`): Argon2id password hashing, timing-equalized dummy hash verification, JWT access token generation, and secure token decoding.
+- Implement Pydantic auth schemas (`app/modules/auth/schemas.py`) with `extra="forbid"` for mass-assignment protection.
+- Implement `UserRepository` and scoped/unscoped lookup functions (`app/modules/auth/repository.py`).
+- Implement registration and authentication services (`app/modules/auth/service.py`) with domain exceptions and secure structlog events.
+- Implement route dependencies (`app/modules/auth/dependencies.py`): `CurrentUser` and `AdminUser` with database-backed live authorization (ADR-021).
+- Implement FastAPI routers (`/api/v1/auth` and `/api/v1/users`) and register domain exception handlers in `app/main.py`.
+- Author comprehensive test suites covering security utilities, tenant isolation, and API endpoints (53 passing tests).
+- Author `docs/SECURITY.md` and ADR-020 through ADR-022.
+
+### Files Created & Modified
+- `backend/app/core/tenancy.py`: `WorkspaceScopedRepository` multi-tenant base class.
+- `backend/app/modules/auth/security.py`: Argon2id password hashing and JWT token handlers.
+- `backend/app/modules/auth/schemas.py`: Pydantic request/response schemas with extra="forbid".
+- `backend/app/modules/auth/repository.py`: Tenant-scoped `UserRepository` and unscoped auth lookups.
+- `backend/app/modules/auth/service.py`: Registration and authentication services with timing mitigation.
+- `backend/app/modules/auth/dependencies.py`: `get_current_user` and `require_admin` FastAPI dependencies.
+- `backend/app/modules/auth/router.py`: Endpoints for `/register`, `/login`, and `/me`.
+- `backend/app/modules/auth/users_router.py`: Administrative `/users` endpoint.
+- `backend/app/main.py`: Domain exception handlers and `/api/v1` router inclusion.
+- `backend/app/core/config.py`: Settings model with JWT secret validator and immutable constants.
+- `backend/app/modules/auth/models.py`: Added relationship to `Workspace`.
+- `backend/alembic.ini`: Added `path_separator = os` to eliminate deprecation warning.
+- `backend/pyproject.toml` & `backend/uv.lock`: Pinned argon2-cffi, pyjwt, email-validator.
+- `backend/tests/conftest.py`: Configured ephemeral dynamic JWT secret for test sessions.
+- `backend/tests/test_config.py`: Added JWT secret validation and bounds tests.
+- `backend/tests/test_auth_security.py`: Unit tests for password hashing and token claims.
+- `backend/tests/test_tenancy.py`: Multi-tenant isolation and repository scoping tests.
+- `backend/tests/test_auth_api.py`: Integration tests for auth routes, RBAC, and error mappings.
+- `docs/SECURITY.md`: Comprehensive security architecture, threat model, and gap roadmap.
+- `docs/ARCHITECTURE_DECISIONS.md`: Added ADR-020, ADR-021, and ADR-022.
+- `backend/README.md` & `README.md`: Updated architecture layout, endpoints table, and status.
+- `docs/PROJECT_STATUS.md` & `docs/PROJECT_CONTEXT.md`: Marked Milestone 4 complete.
+- `docs/LEARNING_NOTES.md` & `docs/TODO.md`: Added Milestone 4 learning notes and next milestone tasks.
+
+### Decisions & Deviations
+- *ImmatureSignatureError on Token Decoding*: Fixed `test_create_access_token_claims_and_exclusion` to use `datetime.now(UTC) - timedelta(seconds=1)` so pyjwt doesn't reject future-dated timestamps against system clock during `iat` validation.
+- *Ruff N818 and S105/S106 Exceptions*: Applied `# noqa: N818` to domain exceptions `RegistrationDisabled`, `EmailAlreadyRegistered`, and `InvalidCredentials` as specified by prompt requirements, and `# noqa: S105/S106` to standard OAuth2 `token_type="bearer"` schema attributes.
+
+---
+
 ## 2026-11-26 — Milestone 3: Database Schema Design, Alembic Migrations & Identity Models
 
 ### Objectives
