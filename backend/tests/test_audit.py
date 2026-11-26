@@ -284,6 +284,29 @@ def test_audit_log_pagination(auth_client: TestClient, db_session: Session) -> N
     assert ids_p1.isdisjoint(ids_p2)
 
 
+def test_audit_log_order_newest_first(auth_client: TestClient, db_session: Session) -> None:
+    """Verify audit log endpoint returns entries ordered newest first (created_at DESC, id DESC)."""
+    workspace, admin = _create_workspace_and_user(db_session, email="newest_first@example.com")
+
+    for i in range(3):
+        audit_service.record(
+            db_session,
+            workspace_id=workspace.id,
+            action=f"order.step.{i}",
+            target_type="step",
+        )
+
+    token, _ = create_access_token(admin.id)
+    resp = auth_client.get(
+        "/api/v1/audit-logs?limit=10",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    items = resp.json()
+    actions = [item["action"] for item in items]
+    assert actions[:3] == ["order.step.2", "order.step.1", "order.step.0"]
+
+
 def test_register_with_64_char_request_id(auth_client: TestClient, db_session: Session) -> None:
     """Verify registration with 64-character valid X-Request-ID stores the full ID."""
     req_id_64 = "A" * 32 + "_" + "B" * 29 + "-1"
