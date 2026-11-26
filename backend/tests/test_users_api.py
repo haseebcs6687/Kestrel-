@@ -289,7 +289,7 @@ def test_update_user_promote_and_demote(auth_client: TestClient, db_session: Ses
     audit_rows = db_session.scalars(
         select(AuditLog)
         .where(AuditLog.workspace_id == ws.id, AuditLog.action == "user.update")
-        .order_by(AuditLog.created_at.asc())
+        .order_by(AuditLog.id.asc())
     ).all()
     assert len(audit_rows) == 2
     assert audit_rows[0].details == {"changes": {"role": {"from": "viewer", "to": "admin"}}}
