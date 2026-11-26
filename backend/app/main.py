@@ -15,8 +15,9 @@ from app.modules.auth.service import (
     RegistrationDisabled,
 )
 from app.modules.auth.sessions import InvalidRefreshToken, RefreshTokenReused
-from app.modules.auth.users_router import router as users_router
 from app.modules.platform.router import router as platform_router
+from app.modules.users.router import router as users_router
+from app.modules.users.service import LastAdminError, UserNotFound
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -77,6 +78,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         clear_refresh_cookie(resp, settings)
         return resp
+
+    @app.exception_handler(UserNotFound)
+    def user_not_found_handler(request: Request, exc: UserNotFound) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"detail": "User not found"},
+        )
+
+    @app.exception_handler(LastAdminError)
+    def last_admin_error_handler(request: Request, exc: LastAdminError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"detail": "Cannot remove the last active admin"},
+        )
 
     app.add_middleware(RequestIdAndLoggingMiddleware)
 
